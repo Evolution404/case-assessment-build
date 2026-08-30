@@ -4,4 +4,5 @@ dist/
 tmp/
 .tools/
 node_modules/
+__pycache__/
 *.log
