@@ -15,10 +15,7 @@ OUT=ROOT/"dist/案例考核报告-从人海作业到数智协同.docx"
 FIG=ROOT/".build/visuals"
 CFG=json.loads((ROOT/"content/case.json").read_text(encoding="utf-8"))
 CASE_ID=os.environ.get("CASE_ID",CFG["case_id_default"])
-# SimSun is present on both the local Word installation and the headless
-# LibreOffice renderer.  FangSong_GB2312 looks correct in Word but loses CJK
-# glyphs in headless PDF export, so use the more portable document body font.
-FONT="SimSun"
+FONT="FangSong_GB2312"
 
 def wipe_body(doc):
     body=doc._element.body
@@ -195,7 +192,7 @@ def build():
     para(doc,"告警工单查重从无到有，巡视照片查重从少量特高压扩展到全电压等级。月度1245万张照片具备规模化筛查能力，重复上传、历史照片复用和图像处理不再只能依靠人工偶然发现。")
     h2(doc,"（三）个人能力：从解决一个问题到沉淀一套方法")
     para(doc,"本案例的核心成果不仅是五个演示场景，更是业务人员自主定义规则、理解数据、设计验证、推动落地的完整路径。空间底座可以继续扩展到其他风险图层，照片特征与候选流程也可以复用到其他图像质量核查任务。")
-    figure(doc,"outcomes","图13　数智协同前后的工作方式对比",15.2)
+    figure(doc,"outcomes","图13　数智协同前后的工作方式对比",13.8)
     page_break(doc)
     # 18 recommendations
     h1(doc,"五、推广应用建议")

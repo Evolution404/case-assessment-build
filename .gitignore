@@ -1,7 +1,7 @@
 .DS_Store
 .build/
 dist/
+tmp/
 .tools/
 node_modules/
 *.log
-

@@ -1,16 +1,17 @@
 # 从人海作业到数智协同
 
-输电运检外协队伍提质增效个人案例的可编译工程。所有正文来自 `content/case.json` 与生成代码，Word、HTML、PDF均为构建产物。
+输电运检外协队伍提质增效个人案例的可编译工程。所有正文来自 `content/case.json` 与生成代码，Word、HTML、PDF均为构建产物，禁止手工修改最终文件。
 
 ## 构建
 
 ```bash
 make all CASE_ID="案例编号：XXXX"
+make privacy-check
 ```
 
 输出位于 `dist/`：
 
-- 案例考核报告（DOCX，目标15—20页）
+- 案例考核报告（DOCX，固定18页）
 - 课题答辩（自包含交互HTML + 15页PDF）
 - 答辩逐字稿（DOCX）
 
@@ -23,6 +24,5 @@ make all CASE_ID="案例编号：XXXX"
 - 修改事实、标题、统计值：`content/case.json`
 - 修改报告结构：`scripts/build_report.py`
 - 修改逐字稿：`scripts/build_script.py`
-- 修改答辩页面：`src/presentation.template.html`
+- 修改答辩页面：`src/presentation.html`
 - 修改效果图：`src/visuals.html`
-

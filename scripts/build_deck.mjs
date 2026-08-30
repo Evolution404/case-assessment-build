@@ -18,7 +18,7 @@ let html=fs.readFileSync(source,'utf8')
   .replace('__CASE_DATA__',JSON.stringify(caseData).replaceAll('<','\\u003c'))
   .replace('__DEMO_DATA__',JSON.stringify(demoData).replaceAll('<','\\u003c'));
 for(let i=1;i<=4;i++)for(const side of ['a','b']){
-  html=html.replace(`__PHOTO_${i}${side.toUpperCase()}__`,uri(`pair-${i}-${side}.jpg`));
+  html=html.replaceAll(`__PHOTO_${i}${side.toUpperCase()}__`,uri(`pair-${i}-${side}.jpg`));
 }
 fs.mkdirSync(path.dirname(output),{recursive:true});
 fs.writeFileSync(output,html);

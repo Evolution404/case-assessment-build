@@ -7,7 +7,7 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH,WD_LINE_SPACING
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
-ROOT=Path(__file__).resolve().parents[1];CFG=json.loads((ROOT/"content/case.json").read_text(encoding="utf-8"));OUT=ROOT/"dist/答辩逐字稿-从人海作业到数智协同.docx";CASE_ID=os.environ.get("CASE_ID",CFG["case_id_default"]);FONT="SimSun"
+ROOT=Path(__file__).resolve().parents[1];CFG=json.loads((ROOT/"content/case.json").read_text(encoding="utf-8"));OUT=ROOT/"dist/答辩逐字稿-从人海作业到数智协同.docx";CASE_ID=os.environ.get("CASE_ID",CFG["case_id_default"]);FONT="FangSong_GB2312"
 
 SLIDES=[
 ("0:00—0:35","封面","翻到封面后停顿，面向评委","各位评委老师，大家好。今天汇报的题目是《从人海作业到数智协同——输电运检外协队伍提质增效实践》。这是一项由我从实际工作问题出发、自主设计并推动落地的个人案例。全文讲两个方面：第一，如何用空间计算增效；第二，如何用照片全量查重提质。"),
