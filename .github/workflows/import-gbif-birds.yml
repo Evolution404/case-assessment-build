@@ -1,0 +1,75 @@
+name: Import GBIF bird occurrence data
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/import-gbif-birds.yml
+
+permissions:
+  contents: write
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download and validate GBIF archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          url='https://api.gbif.org/v1/occurrence/download/request/0046920-260806074905277.zip'
+          key='0046920-260806074905277'
+          dir='data/birds'
+          file="$dir/gbif-occurrence-${key}.zip"
+          mkdir -p "$dir"
+
+          curl --fail --location --retry 5 --retry-delay 3 \
+            --output "$file" "$url"
+          unzip -t "$file" >/dev/null
+
+          bytes=$(stat -c '%s' "$file")
+          sha256=$(sha256sum "$file" | awk '{print $1}')
+          mib=$(python3 - <<PY
+          print(round(${bytes}/1024/1024, 2))
+          PY
+          )
+
+          cat > "$dir/README.md" <<EOF
+          # GBIF 鸟类活动数据
+
+          - GBIF download key: \`${key}\`
+          - 原始下载地址: ${url}
+          - 仓库文件: \`gbif-occurrence-${key}.zip\`
+          - 文件大小: ${bytes} bytes (${mib} MiB)
+          - SHA-256: \`${sha256}\`
+          - 导入日期: $(date -u +%Y-%m-%d)
+
+          该文件作为案例报告鸟害空间分析的原始数据备用，保持原始 ZIP 不改写。
+          EOF
+
+          echo "GBIF archive: ${mib} MiB, sha256=${sha256}"
+
+          # GitHub blocks ordinary Git blobs at 100 MiB. Use LFS only when needed.
+          if [ "$bytes" -gt 99614720 ]; then
+            git lfs install --local
+            git lfs track 'data/birds/*.zip'
+          fi
+
+      - name: Commit imported data
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add data/birds .gitattributes 2>/dev/null || git add data/birds
+          if git diff --cached --quiet; then
+            echo 'No new data to commit.'
+            exit 0
+          fi
+          git commit -m 'data: add GBIF bird occurrence archive'
+          git push origin HEAD:main
