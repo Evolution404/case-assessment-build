@@ -12,7 +12,7 @@ export CASE_ID POLE_DB PYTHON MAP_PYTHON NODE NODE_MODULES CHROME_PATH
 
 .DEFAULT_GOAL := all
 
-.PHONY: all data assets base-map report-figures deck report script pdf verify privacy-check doctor open clean help
+.PHONY: all data assets base-map report-figures management-figures bird-figure case-figures deck report script pdf verify privacy-check doctor open clean help
 
 all: report deck script verify
 
@@ -32,6 +32,17 @@ base-map:
 report-figures:
 	@mkdir -p dist/figures .build/report-spatial
 	@FONTCONFIG_FILE=/opt/homebrew/etc/fonts/fonts.conf "$(MAP_PYTHON)" scripts/build_report_spatial_figures.py
+
+management-figures:
+	@mkdir -p dist/figures
+	@FONTCONFIG_FILE=/opt/homebrew/etc/fonts/fonts.conf "$(MAP_PYTHON)" scripts/build_management_figures.py
+
+bird-figure:
+	@mkdir -p dist/figures .build/report-spatial
+	@FONTCONFIG_FILE=/opt/homebrew/etc/fonts/fonts.conf "$(MAP_PYTHON)" scripts/build_gbif_bird_figure.py
+
+case-figures: management-figures base-map report-figures bird-figure
+	@"$(PYTHON)" scripts/build_case_figures.py
 
 deck: assets
 	@mkdir -p dist .build
@@ -66,7 +77,10 @@ help:
 	@echo 'make all                         构建报告、交互答辩、PDF和逐字稿'
 	@echo 'make data POLE_DB="/path/db"     重建全省脱敏演示数据'
 	@echo 'make base-map                    生成江苏省域分电压等级矢量底图'
-	@echo 'make report-figures               生成交跨、燃放点、防鸟三张报告专题图'
+	@echo 'make report-figures              生成现有交跨、燃放点、防鸟专题图'
+	@echo 'make management-figures          代码生成图1/3/4/8/9/10管理逻辑图'
+	@echo 'make bird-figure                 用仓库GBIF原始数据生成图6鸟类活动筛查图'
+	@echo 'make case-figures                生成并归一化本案例10张审核版报告配图'
 	@echo 'make report | deck | script      单独构建一种成果'
 	@echo 'make verify                       完整质量验收'
 	@echo 'make privacy-check                隐私与坐标泄露检查'
