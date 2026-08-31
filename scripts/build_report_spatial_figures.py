@@ -33,7 +33,7 @@ from matplotlib.lines import Line2D
 from matplotlib.path import Path as MplPath
 from matplotlib.patches import Circle, FancyBboxPatch, Polygon
 
-from map_style import BG, CARD, DISTRICT, FAINT, LAND, MUTED, OUTER, STYLE, TEXT, WHITE
+from map_style import BG, CARD, DISTRICT, FAINT, LAND, MUTED, OUTER, STYLE, TEXT, WHITE, resolve_soffice
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -396,7 +396,7 @@ def save_figure(fig, stem):
     with tempfile.TemporaryDirectory(prefix="report-spatial-lo-") as profile:
         subprocess.run(
             [
-                "soffice",
+                resolve_soffice(),
                 f"-env:UserInstallation={Path(profile).resolve().as_uri()}",
                 "--headless",
                 "--convert-to",
@@ -935,21 +935,14 @@ def point_distance_m(a, b):
 
 def load_fireworks():
     if not FIREWORKS.exists():
-        rings = geometry_rings(BOUNDARY)
-        min_lon = min(point[0] for ring in rings for point in ring)
-        max_lon = max(point[0] for ring in rings for point in ring)
-        min_lat = min(point[1] for ring in rings for point in ring)
-        max_lat = max(point[1] for ring in rings for point in ring)
-        paths = [MplPath(np.asarray(ring)) for ring in rings]
-        rng = np.random.default_rng(20_260_831)
-        points = []
-        while len(points) < 84:
-            candidate = (float(rng.uniform(min_lon, max_lon)), float(rng.uniform(min_lat, max_lat)))
-            if any(path.contains_point(candidate) for path in paths):
-                points.append(candidate)
-        return points, 0, "脱敏仿真点位，仅用于缓冲筛查方法演示"
+        raise FileNotFoundError(
+            f"已核验燃放点数据不存在：{FIREWORKS}；禁止随机生成、模拟或 fallback。"
+        )
     data = json.loads(FIREWORKS.read_text(encoding="utf-8"))
-    return [(float(item["lon"]), float(item["lat"])) for item in data.get("points", [])], data.get("source_count", 0), data.get("source_note", "")
+    points = [(float(item["lon"]), float(item["lat"])) for item in data.get("points", [])]
+    if not points:
+        raise RuntimeError(f"已核验燃放点数据为空：{FIREWORKS}")
+    return points, int(data.get("source_count", 0)), data.get("source_note", "")
 
 
 def draw_fireworks(network, context, fireworks):
@@ -986,7 +979,7 @@ def draw_fireworks(network, context, fireworks):
     add_cards(
         fig,
         [
-            (("公开燃放点" if source_count else "脱敏演示点"), f"{len(points):,}处"),
+            ("公开燃放点", f"{len(points):,}处"),
             ("500米缓冲区", f"{len(points):,}个"),
             ("命中杆塔", f"{len(hit_points):,}基"),
             ("涉及线路", f"{len(hit_lines):,}条"),
@@ -1015,26 +1008,23 @@ def draw_fireworks(network, context, fireworks):
         inset.set_ylim(focus_xy[1] - 1600, focus_xy[1] + 1600)
         inset.set_aspect("equal")
         add_leader(fig, ax, focus_xy, CORAL)
-    inset.text(0.05, 0.05, f"{'公开点位' if source_count else '演示点位'}  ·  500米缓冲  ·  杆塔命中", transform=inset.transAxes, fontsize=6.7, color=MUTED, zorder=8)
+    inset.text(0.05, 0.05, "公开近似点位  ·  500米缓冲  ·  杆塔命中", transform=inset.transAxes, fontsize=6.7, color=MUTED, zorder=8)
     handles = [
-        Line2D([0], [0], marker="o", color="none", markerfacecolor=CORAL, markeredgecolor=WHITE, markersize=5, label=("公开燃放点" if source_count else "脱敏演示点")),
+        Line2D([0], [0], marker="o", color="none", markerfacecolor=CORAL, markeredgecolor=WHITE, markersize=5, label="公开燃放点"),
         Line2D([0], [0], marker="o", color=CORAL, markerfacecolor=CORAL, alpha=0.17, markersize=9, label="500米缓冲区"),
         Line2D([0], [0], marker="o", color="none", markerfacecolor=AMBER, markersize=4, label="命中杆塔"),
     ]
     leg = ax.legend(handles=handles, loc="lower left", bbox_to_anchor=(0.015, 0.01), ncol=3, frameon=True, facecolor=WHITE, edgecolor="#D9DEE4", framealpha=0.96, fancybox=True, fontsize=6.5, columnspacing=1.1, handlelength=1.8, borderpad=0.6)
     for item in leg.get_texts():
         item.set_color(MUTED)
-    if source_count:
-        footer = f"数据来源：省内政府及公安机关公开通告（汇总 {source_count}份）｜仅保留脱敏点位用于方法演示｜{source_note}"
-    else:
-        footer = f"数据说明：{source_note}｜图中不包含真实燃放地点、线路名称、杆号和坐标"
+    footer = f"数据来源：南京市公安局公开通告（核验 {source_count}份）｜公开地址按街镇/官方示意图近似定位｜{source_note}"
     add_footer(fig, footer)
     return save_figure(fig, "集中燃放点缓冲筛查")
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--only", choices=["crossing", "bird", "fireworks", "all"], default="all")
+    parser.add_argument("--only", choices=["crossing", "fireworks", "all"], default="all")
     args = parser.parse_args()
     start = time.perf_counter()
     network = load_network()
@@ -1047,17 +1037,6 @@ def main():
         elapsed = time.perf_counter() - phase
         outputs["crossing"] = [str(p) for p in draw_crossing(network, context, railways, crossings, affected, rail_segment_count, elapsed)]
         outputs["crossing_stats"] = {"rail_features": feature_count, "rail_segments": rail_segment_count, "crossings": len(crossings), "affected_lines": affected, "seconds": round(elapsed, 2)}
-    if args.only in {"bird", "all"}:
-        result, affected_lines = draw_bird(network, context)
-        outputs["bird"] = [str(p) for p in result]
-        outputs["bird_stats"] = {
-            "public_model": "DOI:10.31497/zrzyxb.20241206",
-            "target_species": 64,
-            "habitat_area_km2": 5544.38,
-            "habitat_patches": 274,
-            "important_corridors": 12,
-            "affected_lines": affected_lines,
-        }
     if args.only in {"fireworks", "all"}:
         result = draw_fireworks(network, context, load_fireworks())
         if result:

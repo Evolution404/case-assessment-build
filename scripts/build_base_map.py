@@ -26,7 +26,7 @@ import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
 from matplotlib.lines import Line2D
 
-from map_style import BG, DISTRICT, LAND, MUTED, OUTER, STYLE, TEXT
+from map_style import BG, DISTRICT, LAND, MUTED, OUTER, STYLE, TEXT, resolve_soffice
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -291,7 +291,7 @@ def draw_map():
     with tempfile.TemporaryDirectory(prefix="base-map-lo-") as profile:
         subprocess.run(
             [
-                "soffice",
+                resolve_soffice(),
                 f"-env:UserInstallation={Path(profile).resolve().as_uri()}",
                 "--headless",
                 "--convert-to",

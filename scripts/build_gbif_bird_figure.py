@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import csv
 import json
+import subprocess
+import tempfile
 import zipfile
 from pathlib import Path
 
@@ -23,18 +25,20 @@ from matplotlib.lines import Line2D
 from matplotlib.path import Path as MplPath
 
 from build_report_spatial_figures import geometry_rings, load_network, map_context, draw_geography, draw_network, mercator
-from map_style import BG, LAND, MUTED, OUTER, TEXT, WHITE
+from map_style import BG, LAND, MUTED, OUTER, TEXT, WHITE, resolve_soffice
 
 ROOT = Path(__file__).resolve().parents[1]
 GBIF_ZIP = ROOT / "data" / "birds" / "gbif-occurrence-0046920-260806074905277.zip"
 BOUNDARY = ROOT / "data" / "jiangsu_outline.geojson"
-OUT = ROOT / "dist" / "figures" / "06-鸟类活动重点区域筛查.png"
+OUT_DIR = ROOT / "dist" / "figures"
+OUTPUT_STEM = "06-鸟类活动重点区域筛查"
 SUMMARY = ROOT / ".build" / "report-spatial" / "gbif-bird-summary.json"
 
 plt.rcParams.update({
     "font.family": ["PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "SimHei", "Arial Unicode MS"],
     "axes.unicode_minus": False,
     "savefig.transparent": False,
+    "svg.fonttype": "none",
 })
 
 
@@ -168,7 +172,7 @@ def build():
     x_grid, y_grid, score, outer_t, core_t, data_bounds = activity_surface(points)
     hit_segments, hit_lines = affected_segments(network, score, core_t, data_bounds)
 
-    fig = plt.figure(figsize=(16, 9), dpi=150, facecolor=BG)
+    fig = plt.figure(figsize=(16, 9), facecolor=BG)
     ax = fig.add_axes([0.055, 0.075, 0.69, 0.82], facecolor=BG)
     draw_geography(ax, province, districts, map_bounds)
     outer = np.ma.masked_where(score < outer_t, score)
@@ -210,11 +214,41 @@ def build():
     for item in leg.get_texts(): item.set_color(MUTED)
 
     fig.text(0.055, 0.028, f"数据来源：GBIF occurrence download 0046920-260806074905277｜省域内有效坐标记录 {stats['jiangsu_records']:,} 条｜仅输出聚合热点和脱敏线路关系", fontsize=7.4, color="#777A7D")
-    OUT.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(OUT, dpi=150, facecolor=BG)
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    svg = OUT_DIR / f"{OUTPUT_STEM}.svg"
+    png = OUT_DIR / f"{OUTPUT_STEM}.png"
+    emf = OUT_DIR / f"{OUTPUT_STEM}.emf"
+    fig.savefig(svg, format="svg", facecolor=BG)
+    fig.savefig(png, format="png", dpi=320, facecolor=BG)
     plt.close(fig)
+    with tempfile.TemporaryDirectory(prefix="gbif-bird-lo-") as profile:
+        subprocess.run(
+            [
+                resolve_soffice(),
+                f"-env:UserInstallation={Path(profile).resolve().as_uri()}",
+                "--headless",
+                "--convert-to",
+                "emf",
+                "--outdir",
+                str(OUT_DIR),
+                str(svg),
+            ],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    if not emf.exists():
+        raise RuntimeError(f"EMF 导出失败：{emf}")
 
-    stats.update({"outer_quantile": 0.72, "core_quantile": 0.91, "affected_lines": len(hit_lines), "affected_segments": len(hit_segments), "output": str(OUT)})
+    stats.update({
+        "outer_quantile": 0.72,
+        "core_quantile": 0.91,
+        "affected_lines": len(hit_lines),
+        "affected_segments": len(hit_segments),
+        "network_poles": network["total_poles"],
+        "network_lines": network["total_lines"],
+        "outputs": {"svg": str(svg), "png": str(png), "emf": str(emf)},
+    })
     SUMMARY.parent.mkdir(parents=True, exist_ok=True)
     SUMMARY.write_text(json.dumps(stats, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(stats, ensure_ascii=False, indent=2))

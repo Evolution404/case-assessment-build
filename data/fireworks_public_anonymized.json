@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "source_count": 1,
+  "source_title": "南京警方发布：春节期间烟花爆竹禁限放政策",
+  "source_date": "2026-02-13",
+  "source_url": "https://gaj.nanjing.gov.cn/jwdt/202602/t20260213_5793897.html",
+  "source_note": "公开地址按街镇和官方示意图近似定位，仅用于500米空间筛查方法展示；不代表燃放点精确坐标。分布已核验：六合4处、栖霞4处、江宁6处、溧水4处、高淳2处。",
+  "points": [
+    {"id": 1, "district": "六合", "locality": "程桥街道", "lon": 118.610, "lat": 32.470},
+    {"id": 2, "district": "六合", "locality": "横梁街道", "lon": 118.925, "lat": 32.321},
+    {"id": 3, "district": "六合", "locality": "龙池街道", "lon": 118.718, "lat": 32.308},
+    {"id": 4, "district": "六合", "locality": "龙袍街道", "lon": 118.949, "lat": 32.205},
+    {"id": 5, "district": "栖霞", "locality": "八卦洲北", "lon": 118.812, "lat": 32.185},
+    {"id": 6, "district": "栖霞", "locality": "八卦洲南", "lon": 118.819, "lat": 32.158},
+    {"id": 7, "district": "栖霞", "locality": "龙潭大道", "lon": 119.061, "lat": 32.188},
+    {"id": 8, "district": "栖霞", "locality": "龙潭街道", "lon": 119.039, "lat": 32.171},
+    {"id": 9, "district": "江宁", "locality": "汤山街道", "lon": 119.053, "lat": 32.060},
+    {"id": 10, "district": "江宁", "locality": "淳化街道", "lon": 119.060, "lat": 31.940},
+    {"id": 11, "district": "江宁", "locality": "秣陵街道", "lon": 118.837, "lat": 31.833},
+    {"id": 12, "district": "江宁", "locality": "江苏软件园", "lon": 118.789, "lat": 31.905},
+    {"id": 13, "district": "江宁", "locality": "禄口街道", "lon": 118.860, "lat": 31.776},
+    {"id": 14, "district": "江宁", "locality": "横溪街道", "lon": 118.777, "lat": 31.723},
+    {"id": 15, "district": "溧水", "locality": "石湫街道", "lon": 118.901, "lat": 31.651},
+    {"id": 16, "district": "溧水", "locality": "白马镇", "lon": 119.172, "lat": 31.581},
+    {"id": 17, "district": "溧水", "locality": "洪蓝街道", "lon": 118.980, "lat": 31.650},
+    {"id": 18, "district": "溧水", "locality": "和凤镇", "lon": 118.925, "lat": 31.515},
+    {"id": 19, "district": "高淳", "locality": "桠溪街道", "lon": 119.160, "lat": 31.320},
+    {"id": 20, "district": "高淳", "locality": "阳江镇", "lon": 118.820, "lat": 31.330}
+  ]
+}

@@ -1,4 +1,23 @@
-"""Shared cartographic palette for every province-scale report figure."""
+"""Shared cartographic palette and export helpers for province-scale report figures."""
+
+from pathlib import Path
+import shutil
+
+
+def resolve_soffice() -> str:
+    """Return a usable LibreOffice soffice binary for SVG -> EMF export."""
+    candidates = [
+        shutil.which("soffice"),
+        "/Applications/LibreOffice.app/Contents/MacOS/soffice",
+        str(Path.home() / "Applications/LibreOffice.app/Contents/MacOS/soffice"),
+    ]
+    for candidate in candidates:
+        if candidate and Path(candidate).is_file():
+            return candidate
+    raise FileNotFoundError(
+        "未找到 LibreOffice soffice，无法生成正式 EMF；请安装 LibreOffice，禁止跳过或伪造 EMF。"
+    )
+
 
 BG = "#F7F7F5"
 LAND = "#FEFEFD"
