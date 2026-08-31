@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
-"""Normalize all ten approved report figures into one stable output set.
+"""Normalize the ten approved report figures into one stable output set.
 
-Prerequisites are produced by Makefile targets:
-- management figures: build_management_figures.py
-- province base map: build_base_map.py
-- crossing/fireworks: build_report_spatial_figures.py
-- GBIF bird map: build_gbif_bird_figure.py
+Source policy:
+- management figures: scripts/build_management_figures.py
+- province base map: scripts/build_base_map.py
+- crossing/fireworks: scripts/build_report_spatial_figures.py
+- bird map: scripts/build_gbif_bird_figure.py
+
+Spatial figures are PRODUCTION-ONLY. There is deliberately no demo.json
+fallback. If POLE_DB / railway PBF or upstream production outputs are missing,
+this script must fail instead of fabricating a visually degraded review map.
+See docs/FIGURE-SOURCE-POLICY.md.
 """
 from __future__ import annotations
 
@@ -20,6 +25,8 @@ ALIASES = {
     "铁路交叉跨越识别.png": "05-交叉跨越自动筛查.png",
     "集中燃放点缓冲筛查.png": "07-集中燃放点周边杆塔筛查.png",
 }
+
+PRODUCTION_SPATIAL_SOURCES = tuple(ALIASES.keys()) + ("06-鸟类活动重点区域筛查.png",)
 
 EXPECTED = [
     "01-外协管理两大痛点.png",
@@ -37,18 +44,23 @@ EXPECTED = [
 
 def main():
     FIG.mkdir(parents=True, exist_ok=True)
+
+    missing_sources = [name for name in PRODUCTION_SPATIAL_SOURCES if not (FIG / name).exists()]
+    if missing_sources:
+        raise FileNotFoundError(
+            "正式空间图源缺失，禁止使用 demo.json fallback：" + "、".join(missing_sources)
+        )
+
     for source, target in ALIASES.items():
         src = FIG / source
         dst = FIG / target
-        if not src.exists():
-            raise FileNotFoundError(f"缺少上游专题图：{src}")
         shutil.copy2(src, dst)
         print(f"[case-figure] {dst.name} <- {src.name}")
 
     missing = [name for name in EXPECTED if not (FIG / name).exists()]
     if missing:
         raise FileNotFoundError("十张报告图未生成完整：" + "、".join(missing))
-    print("[case-figure] 10/10 figures ready")
+    print("[case-figure] 10/10 production figures ready")
 
 
 if __name__ == "__main__":
