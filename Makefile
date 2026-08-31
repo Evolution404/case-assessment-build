@@ -12,7 +12,7 @@ export CASE_ID POLE_DB PYTHON MAP_PYTHON NODE NODE_MODULES CHROME_PATH
 
 .DEFAULT_GOAL := all
 
-.PHONY: all data assets base-map deck report script pdf verify privacy-check doctor open clean help
+.PHONY: all data assets base-map report-figures deck report script pdf verify privacy-check doctor open clean help
 
 all: report deck script verify
 
@@ -28,6 +28,10 @@ assets: data
 base-map:
 	@mkdir -p dist/figures
 	@FONTCONFIG_FILE=/opt/homebrew/etc/fonts/fonts.conf "$(MAP_PYTHON)" scripts/build_base_map.py
+
+report-figures:
+	@mkdir -p dist/figures .build/report-spatial
+	@FONTCONFIG_FILE=/opt/homebrew/etc/fonts/fonts.conf "$(MAP_PYTHON)" scripts/build_report_spatial_figures.py
 
 deck: assets
 	@mkdir -p dist .build
@@ -62,6 +66,7 @@ help:
 	@echo 'make all                         构建报告、交互答辩、PDF和逐字稿'
 	@echo 'make data POLE_DB="/path/db"     重建全省脱敏演示数据'
 	@echo 'make base-map                    生成江苏省域分电压等级矢量底图'
+	@echo 'make report-figures               生成交跨、燃放点、防鸟三张报告专题图'
 	@echo 'make report | deck | script      单独构建一种成果'
 	@echo 'make verify                       完整质量验收'
 	@echo 'make privacy-check                隐私与坐标泄露检查'
