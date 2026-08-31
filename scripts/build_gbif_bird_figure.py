@@ -43,16 +43,18 @@ plt.rcParams.update({
 
 
 def occurrence_member(zf: zipfile.ZipFile) -> str:
-    names = zf.namelist()
-    for wanted in ("occurrence.txt", "occurrence.tsv"):
+    names = [name for name in zf.namelist() if not name.endswith("/")]
+    for wanted in ("occurrence.txt", "occurrence.tsv", "occurrence.csv"):
         for name in names:
             if name.lower().endswith(wanted):
                 return name
-    for name in names:
-        lower = name.lower()
-        if (lower.endswith(".txt") or lower.endswith(".tsv")) and "occurrence" in lower:
+    tabular = [name for name in names if name.lower().endswith((".txt", ".tsv", ".csv"))]
+    for name in tabular:
+        if "occurrence" in name.lower():
             return name
-    raise FileNotFoundError("GBIF ZIP 中未找到 occurrence.txt/occurrence.tsv")
+    if len(tabular) == 1:
+        return tabular[0]
+    raise FileNotFoundError("GBIF ZIP 中未找到可识别的 occurrence TXT/TSV/CSV 数据表")
 
 
 def load_occurrences() -> tuple[np.ndarray, dict]:
@@ -71,7 +73,14 @@ def load_occurrences() -> tuple[np.ndarray, dict]:
         member = occurrence_member(zf)
         with zf.open(member) as raw:
             import io
-            reader = csv.DictReader(io.TextIOWrapper(raw, encoding="utf-8", errors="replace"), delimiter="\t")
+            text = io.TextIOWrapper(raw, encoding="utf-8", errors="replace")
+            header = text.readline()
+            delimiter = "\t" if header.count("\t") >= header.count(",") else ","
+            fieldnames = next(csv.reader([header], delimiter=delimiter))
+            reader = csv.DictReader(text, fieldnames=fieldnames, delimiter=delimiter)
+            required = {"decimalLongitude", "decimalLatitude"}
+            if not required.issubset(set(fieldnames)):
+                raise RuntimeError(f"GBIF occurrence 表缺少必要坐标字段：{sorted(required - set(fieldnames))}")
             for row in reader:
                 scanned += 1
                 try:
