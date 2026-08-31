@@ -38,7 +38,7 @@ deck: assets
 	@NODE_PATH="$(NODE_MODULES)" "$(NODE)" scripts/build_deck.mjs
 	@NODE_PATH="$(NODE_MODULES)" "$(NODE)" scripts/build_pdf.mjs
 
-report: assets
+report: assets base-map report-figures
 	@mkdir -p dist .build/report-render
 	@"$(PYTHON)" scripts/build_report.py
 

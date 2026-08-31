@@ -13,6 +13,7 @@ ROOT=Path(__file__).resolve().parents[1]
 TEMPLATE=ROOT.parent/"06 研讨报告模板【研讨报告可参考，根据实际.docx"
 OUT=ROOT/"dist/案例考核报告-从人海作业到数智协同.docx"
 FIG=ROOT/".build/visuals"
+SPATIAL_FIG=ROOT/"dist/figures"
 CFG=json.loads((ROOT/"content/case.json").read_text(encoding="utf-8"))
 CASE_ID=os.environ.get("CASE_ID",CFG["case_id_default"])
 FONT="FangSong_GB2312"
@@ -43,8 +44,15 @@ def h2(doc,text):return para(doc,text,14,True,indent=False,before=2,after=2,keep
 def bullet(doc,text):return para(doc,"● "+text,13.5,False,indent=False,after=1,line=25)
 
 def figure(doc,name,caption,width=15.0):
+    spatial={
+        "province-map":"江苏省域输电线路电压等级分布.png",
+        "crossing":"铁路交叉跨越识别.png",
+        "bird":"防鸟重点区域治理.png",
+        "fireworks":"集中燃放点缓冲筛查.png",
+    }
+    image_path=SPATIAL_FIG/spatial[name] if name in spatial else FIG/f"{name}.png"
     p=doc.add_paragraph();p.alignment=WD_ALIGN_PARAGRAPH.CENTER;p.paragraph_format.space_before=Pt(5);p.paragraph_format.space_after=Pt(0)
-    p.add_run().add_picture(str(FIG/f"{name}.png"),width=Cm(width))
+    p.add_run().add_picture(str(image_path),width=Cm(width))
     c=doc.add_paragraph();c.alignment=WD_ALIGN_PARAGRAPH.CENTER;c.paragraph_format.space_after=Pt(5)
     set_run(c.add_run(caption),10.5,False,"555555")
 
@@ -139,10 +147,10 @@ def build():
     para(doc,"候选结果需要经过线路拓扑检查和人工确认。程序负责不遗漏地扫过全部对象，人员负责判断支线连接关系、图层误差和现场实际情况，最终形成可派发、可核验的清单。")
     page_break(doc)
     # 10 bird
-    h2(doc,"2.防鸟：密度聚类与凸包收敛重点区域")
-    para(doc,"鸟害风险通常表现为稳定聚集区，同时夹杂少量孤立噪声点。本案例采用密度思路识别空间聚集：在给定邻域和最小样本条件下形成簇，孤立点保留为待复核噪声；再对每个簇计算凸包，将零散点收敛成可与线路叠加的重点区域。")
-    figure(doc,"bird","图7　鸟害样本聚类与重点区域演示",15.2)
-    para(doc,"该处理帮助外协人员优先关注进入重点区域的区段，减少全线平均投入。演示中的鸟害点为脱敏仿真样本，只用于说明算法，不作为实际风险清单。")
+    h2(doc,"2.防鸟：公开生态资料与线路空间叠加")
+    para(doc,"依据省域鸟类多样性保护研究和公开生态保护资料，将沿海迁徙带、主要河流与运河生态廊道、湖泊湿地网络等要素进行省域概化，形成连续的鸟类活动重点区域。再与输电线路空间叠加，批量筛选穿越重点区域的线路区段，为防鸟装置排查、差异化巡视和现场复核提供范围依据。")
+    figure(doc,"bird","图7　鸟害重点区域与输电线路空间关系",15.2)
+    para(doc,"图中采用两级蓝灰区域表达活动关联范围和重点适宜区域，输电线路保持原电压等级配色并连续绘制在活动区域上方。活动区域来自公开资料的省域概化，只用于说明分析方法和任务组织方式，不替代现场调查与专业认定。")
     page_break(doc)
     # 11 fireworks
     h2(doc,"3.集中燃放点：N米缓冲与周边杆塔批量筛查")

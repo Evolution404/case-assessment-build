@@ -26,6 +26,8 @@ import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
 from matplotlib.lines import Line2D
 
+from map_style import BG, DISTRICT, LAND, MUTED, OUTER, STYLE, TEXT
+
 
 ROOT = Path(__file__).resolve().parents[1]
 DB = Path(os.environ.get("POLE_DB", "/Users/zhangyuxi/Desktop/000基础数据/pole_data.db"))
@@ -33,22 +35,6 @@ BOUNDARY = ROOT / "data" / "jiangsu_outline.geojson"
 DISTRICTS = ROOT / "data" / "jiangsu_districts.geojson"
 OUT = ROOT / "dist" / "figures"
 OUTPUT_STEM = "江苏省域输电线路电压等级分布"
-
-BG = "#F2F2F7"
-LAND = "#FCFCFD"
-DISTRICT = "#929EAB"
-OUTER = "#748291"
-TEXT = "#20242A"
-MUTED = "#6E7781"
-
-# Preserve the voltage colors of the Nanjing interactive map on a paper-ready background.
-STYLE = {
-    "35": {"label": "35kV", "color": "#299873", "width": 0.18, "alpha": 0.58, "z": 2},
-    "110": {"label": "110kV", "color": "#3375D6", "width": 0.24, "alpha": 0.68, "z": 3},
-    "220": {"label": "220kV", "color": "#CF9015", "width": 0.34, "alpha": 0.78, "z": 4},
-    "other_dc": {"label": "其他直流", "color": "#755CA7", "width": 0.42, "alpha": 0.82, "z": 5},
-    "500plus": {"label": "500kV及以上", "color": "#D94F5C", "width": 0.64, "alpha": 0.88, "z": 6},
-}
 
 CODE_CATEGORY = {
     "25": "35",
@@ -217,7 +203,7 @@ def draw_map():
     for ring in province_xy:
         ax.fill([p[0] for p in ring], [p[1] for p in ring], color=LAND, zorder=0)
     # A quiet administrative layer stays below the thematic network.
-    ax.add_collection(LineCollection(district_xy, colors="#D8DDE3", linewidths=0.46, alpha=0.92, zorder=1))
+    ax.add_collection(LineCollection(district_xy, colors=DISTRICT, linewidths=0.34, alpha=0.46, zorder=1))
 
     order = ["35", "110", "220", "other_dc", "500plus"]
     for category in order:
@@ -233,18 +219,6 @@ def draw_map():
                 joinstyle="round",
             )
         )
-    # Redraw city boundaries above the network so they remain readable in dense areas.
-    city_lines = LineCollection(
-        district_xy,
-        colors=DISTRICT,
-        linewidths=0.40,
-        alpha=0.80,
-        linestyles=(0, (3.0, 2.2)),
-        zorder=7,
-        capstyle="round",
-        joinstyle="round",
-    )
-    ax.add_collection(city_lines)
     ax.add_collection(LineCollection(province_xy, colors=OUTER, linewidths=0.66, alpha=0.92, zorder=8))
 
     pad_x = (max_x - min_x) * 0.08
@@ -268,7 +242,7 @@ def draw_map():
         Line2D([0], [0], color=STYLE[key]["color"], lw=max(STYLE[key]["width"] * 2.15, 1.0), alpha=STYLE[key]["alpha"], label=STYLE[key]["label"])
         for key in ["500plus", "220", "110", "35", "other_dc"]
     ]
-    handles.append(Line2D([0], [0], color=DISTRICT, lw=0.9, ls=(0, (3.0, 2.2)), alpha=0.85, label="地市界"))
+    handles.append(Line2D([0], [0], color=DISTRICT, lw=0.9, alpha=0.72, label="地市界"))
     legend = ax.legend(
         handles=handles,
         loc="upper right",

@@ -33,6 +33,8 @@ from matplotlib.lines import Line2D
 from matplotlib.path import Path as MplPath
 from matplotlib.patches import Circle, FancyBboxPatch, Polygon
 
+from map_style import BG, CARD, DISTRICT, FAINT, LAND, MUTED, OUTER, STYLE, TEXT, WHITE
+
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILD = ROOT / ".build" / "report-spatial"
@@ -48,15 +50,6 @@ FIREWORKS = ROOT / "data" / "fireworks_public_anonymized.json"
 BOUNDARY = ROOT / "data" / "jiangsu_outline.geojson"
 DISTRICTS = ROOT / "data" / "jiangsu_districts.geojson"
 
-BG = "#F2F2F7"
-LAND = "#FCFCFD"
-CARD = "#F8F8FA"
-WHITE = "#FFFFFF"
-TEXT = "#20242A"
-MUTED = "#737B86"
-FAINT = "#DCE1E6"
-DISTRICT = "#B7C0CA"
-OUTER = "#7C8996"
 GRAPHITE = "#434A52"
 AMBER = "#D39124"
 CORAL = "#E56658"
@@ -64,13 +57,6 @@ TEAL = "#1E9A8A"
 EMERALD = "#35A77C"
 BLUE = "#4D83C6"
 
-STYLE = {
-    "35": {"label": "35kV", "color": "#299873", "width": 0.16, "alpha": 0.36, "z": 2},
-    "110": {"label": "110kV", "color": "#3375D6", "width": 0.20, "alpha": 0.44, "z": 3},
-    "220": {"label": "220kV", "color": "#CF9015", "width": 0.27, "alpha": 0.54, "z": 4},
-    "other_dc": {"label": "其他直流", "color": "#755CA7", "width": 0.31, "alpha": 0.58, "z": 5},
-    "500plus": {"label": "500kV及以上", "color": "#D94F5C", "width": 0.45, "alpha": 0.66, "z": 6},
-}
 CODE_CATEGORY = {
     "25": "35",
     "32": "110",
@@ -267,7 +253,7 @@ def draw_geography(ax, province, districts, bounds):
     ax.axis("off")
 
 
-def draw_network(ax, display, mode="color", alpha_factor=1.0):
+def draw_network(ax, display, mode="color", alpha_factor=1.0, z_offset=0):
     for category in ["35", "110", "220", "other_dc", "500plus"]:
         style = STYLE[category]
         color = style["color"] if mode == "color" else "#AEB6BF"
@@ -278,7 +264,27 @@ def draw_network(ax, display, mode="color", alpha_factor=1.0):
                 colors=color,
                 linewidths=style["width"],
                 alpha=alpha,
-                zorder=style["z"],
+                zorder=style["z"] + z_offset,
+                capstyle="round",
+                joinstyle="round",
+            )
+        )
+
+
+def draw_local_network(ax, display, predicate, width_factor=3.2, alpha_factor=1.0, z_offset=2):
+    """Draw a local inset with the same voltage palette as the province map."""
+    for category in ["35", "110", "220", "other_dc", "500plus"]:
+        style = STYLE[category]
+        local = [segment for segment in display.get(category, []) if predicate(segment)]
+        if not local:
+            continue
+        ax.add_collection(
+            LineCollection(
+                local,
+                colors=style["color"],
+                linewidths=max(style["width"] * width_factor, 0.48),
+                alpha=min(style["alpha"] * alpha_factor, 0.96),
+                zorder=style["z"] + z_offset,
                 capstyle="round",
                 joinstyle="round",
             )
@@ -383,8 +389,9 @@ def save_figure(fig, stem):
     OUT.mkdir(parents=True, exist_ok=True)
     svg = OUT / f"{stem}.svg"
     png = OUT / f"{stem}.png"
-    fig.savefig(svg, format="svg", facecolor=BG)
-    fig.savefig(png, format="png", dpi=320, facecolor=BG)
+    facecolor = fig.get_facecolor()
+    fig.savefig(svg, format="svg", facecolor=facecolor)
+    fig.savefig(png, format="png", dpi=320, facecolor=facecolor)
     plt.close(fig)
     with tempfile.TemporaryDirectory(prefix="report-spatial-lo-") as profile:
         subprocess.run(
@@ -536,10 +543,14 @@ def draw_crossing(network, context, railway_lines, crossings, affected, rail_seg
         focus_xy = mercator(focus[0], focus[1])
         rx = 5_200
         ry = 5_400
-        for segments in network["display"].values():
-            local = [s for s in segments if any(abs(x - focus_xy[0]) < rx and abs(y - focus_xy[1]) < ry for x, y in s)]
-            if local:
-                inset.add_collection(LineCollection(local, colors="#6C8FB5", linewidths=0.8, alpha=0.75, zorder=2))
+        draw_local_network(
+            inset,
+            network["display"],
+            lambda segment: any(abs(x - focus_xy[0]) < rx and abs(y - focus_xy[1]) < ry for x, y in segment),
+            width_factor=3.6,
+            alpha_factor=1.12,
+            z_offset=2,
+        )
         local_rail = [s for s in rail_display if any(abs(x - focus_xy[0]) < rx and abs(y - focus_xy[1]) < ry for x, y in s)]
         inset.add_collection(LineCollection(local_rail, colors=WHITE, linewidths=3.2, alpha=1, zorder=3))
         inset.add_collection(LineCollection(local_rail, colors=GRAPHITE, linewidths=1.35, alpha=0.90, zorder=4))
@@ -554,38 +565,61 @@ def draw_crossing(network, context, railway_lines, crossings, affected, rail_seg
     return save_figure(fig, "铁路交叉跨越识别")
 
 
-def bird_activity(lon, lat):
-    """Public-study-informed bird habitat/activity potential, scaled 0..1.
+def distance_to_polyline(lon, lat, points):
+    """Approximate angular distance to a generalized province-scale corridor."""
+    lon = np.asarray(lon, dtype=float)
+    lat = np.asarray(lat, dtype=float)
+    scale_x = math.cos(math.radians(32.7))
+    px = lon * scale_x
+    py = lat
+    distance = np.full(np.broadcast(lon, lat).shape, np.inf, dtype=float)
+    for start, end in zip(points, points[1:]):
+        x1, y1 = start[0] * scale_x, start[1]
+        x2, y2 = end[0] * scale_x, end[1]
+        dx, dy = x2 - x1, y2 - y1
+        denominator = dx * dx + dy * dy
+        t = np.clip(((px - x1) * dx + (py - y1) * dy) / denominator, 0, 1)
+        distance = np.minimum(distance, np.hypot(px - (x1 + t * dx), py - (y1 + t * dy)))
+    return distance
 
-    The centres and anisotropy follow the province-level forest/water-bird
-    suitability map and its published interpretation.  This is a redrawn,
-    generalized surface; it is not a copy of the article's raster figure.
+
+def bird_activity(lon, lat):
+    """Generalized province-scale bird activity framework, scaled 0..1.
+
+    The broad belts follow public descriptions of the coastal migration route,
+    major river/canal ecological corridors, lake-wetland networks and southern
+    hilly habitat.  Coordinates are deliberately generalized and do not encode
+    observation points, nests or operational risk locations.
     """
     lon = np.asarray(lon, dtype=float)
     lat = np.asarray(lat, dtype=float)
-    zones = [
-        # southwest lake group and southern water network
-        (120.12, 31.30, 0.36, 0.20, 1.00),
-        (119.55, 31.55, 0.55, 0.25, 0.92),
-        (118.72, 31.72, 0.43, 0.30, 0.88),
-        # major river corridor from west to east
-        (118.70, 32.08, 0.40, 0.18, 0.84),
-        (119.55, 32.03, 0.56, 0.18, 0.78),
-        (120.52, 32.00, 0.58, 0.17, 0.82),
-        # coastal wetlands / migratory flyway
-        (120.39, 32.72, 0.20, 0.50, 0.86),
-        (120.35, 33.42, 0.19, 0.63, 1.00),
-        (120.04, 34.16, 0.23, 0.45, 0.84),
-        (119.30, 34.66, 0.24, 0.23, 0.88),
-        # northern and central lake/wetland stepping stones
-        (117.78, 34.24, 0.31, 0.22, 0.48),
-        (118.72, 33.20, 0.33, 0.24, 0.48),
-        (119.15, 32.72, 0.30, 0.22, 0.46),
+    corridors = [
+        # East-coast migration and wintering belt.
+        ([(119.65, 34.92), (120.20, 34.45), (120.55, 33.90), (120.62, 33.20), (120.78, 32.55), (121.12, 31.85)], 0.30, 1.00),
+        # Major east-west river corridor and estuary connection.
+        ([(118.10, 32.08), (118.85, 32.15), (119.55, 32.08), (120.30, 31.98), (121.22, 31.72)], 0.23, 0.84),
+        # North-south canal / lake stepping-stone corridor.
+        ([(117.72, 34.35), (118.30, 33.75), (118.82, 33.15), (119.20, 32.50), (119.55, 31.80)], 0.22, 0.68),
+        # Northern east-west ecological connection.
+        ([(116.95, 34.55), (117.85, 34.42), (118.80, 34.40), (119.85, 34.55)], 0.20, 0.58),
     ]
     score = np.zeros(np.broadcast(lon, lat).shape, dtype=float)
-    for cx, cy, sx, sy, weight in zones:
+    for points, width, weight in corridors:
+        distance = distance_to_polyline(lon, lat, points)
+        score = np.maximum(score, weight * np.exp(-0.5 * (distance / width) ** 2))
+    broad_regions = [
+        (118.65, 33.22, 0.64, 0.46, 0.76),
+        (119.38, 32.82, 0.58, 0.42, 0.72),
+        (120.05, 31.38, 0.72, 0.34, 0.86),
+        (118.72, 31.55, 0.54, 0.38, 0.68),
+    ]
+    for cx, cy, sx, sy, weight in broad_regions:
         value = weight * np.exp(-0.5 * (((lon - cx) / sx) ** 2 + ((lat - cy) / sy) ** 2))
         score = np.maximum(score, value)
+    # Low-frequency modulation avoids synthetic geometric edges without adding
+    # false point precision or small isolated islands.
+    modulation = 1 + 0.055 * np.sin(lon * 8.3 + lat * 2.7) * np.sin(lat * 7.1 - lon * 1.9)
+    score *= modulation
     return np.clip(score, 0, 1)
 
 
@@ -605,6 +639,177 @@ def bird_public_analysis(network, surface):
             priority.append([mercator(*start), mercator(*end)])
             affected.add(hashlib.sha1(line_name.encode("utf-8")).hexdigest()[:10])
     return priority, len(affected)
+
+
+def smooth_masked_surface(score, passes=6):
+    """Smooth a masked study raster without bleeding across the province edge."""
+    valid = ~np.ma.getmaskarray(score)
+    values = np.ma.filled(score, 0).astype(float)
+    weights = valid.astype(float)
+    for _ in range(passes):
+        padded_values = np.pad(values * weights, 1, mode="edge")
+        padded_weights = np.pad(weights, 1, mode="edge")
+        total = sum(
+            padded_values[dy : dy + values.shape[0], dx : dx + values.shape[1]]
+            for dy in range(3)
+            for dx in range(3)
+        )
+        count = sum(
+            padded_weights[dy : dy + values.shape[0], dx : dx + values.shape[1]]
+            for dy in range(3)
+            for dx in range(3)
+        )
+        values = np.divide(total, count, out=np.zeros_like(total), where=count > 0)
+        weights = valid.astype(float)
+    return np.ma.masked_where(~valid, values)
+
+
+def keep_large_components(mask, min_cells, max_components):
+    """Keep meaningful study-raster regions and discard isolated JPEG speckle."""
+    mask = np.asarray(mask, dtype=bool)
+    visited = np.zeros(mask.shape, dtype=bool)
+    components = []
+    height, width = mask.shape
+    for row in range(height):
+        for col in range(width):
+            if not mask[row, col] or visited[row, col]:
+                continue
+            stack = [(row, col)]
+            visited[row, col] = True
+            component = []
+            while stack:
+                current_row, current_col = stack.pop()
+                component.append((current_row, current_col))
+                for dr in (-1, 0, 1):
+                    for dc in (-1, 0, 1):
+                        if dr == 0 and dc == 0:
+                            continue
+                        nr, nc = current_row + dr, current_col + dc
+                        if 0 <= nr < height and 0 <= nc < width and mask[nr, nc] and not visited[nr, nc]:
+                            visited[nr, nc] = True
+                            stack.append((nr, nc))
+            if len(component) >= min_cells:
+                components.append(component)
+    components.sort(key=len, reverse=True)
+    kept = np.zeros(mask.shape, dtype=bool)
+    for component in components[:max_components]:
+        rows, cols = zip(*component)
+        kept[np.asarray(rows), np.asarray(cols)] = True
+    return kept
+
+
+def bird_relief_surface(x_grid, y_grid, public_score):
+    """Prepare the public-study raster without inventing extra activity areas."""
+    del x_grid, y_grid
+    return smooth_masked_surface(public_score, passes=4)
+
+
+def paper_map_figure():
+    paper = BG
+    fig = plt.figure(figsize=(12, 6.75), facecolor=paper)
+    ax = fig.add_axes([0.18, 0.070, 0.64, 0.885], facecolor="none", zorder=1)
+    return fig, ax, paper
+
+
+def draw_paper_geography(ax, province, bounds, paper):
+    """Draw a quiet paper-cut province base with a restrained cast shadow."""
+    core_dx, core_dy = 2_500, -2_900
+    shadow_dx, shadow_dy = 7_200, -7_800
+    for ring in province:
+        xs = np.asarray([point[0] for point in ring])
+        ys = np.asarray([point[1] for point in ring])
+        ax.fill(xs + shadow_dx, ys + shadow_dy, color="#7D8790", alpha=0.12, zorder=0, linewidth=0)
+        ax.fill(xs + core_dx, ys + core_dy, color="#E7EAEC", alpha=0.98, zorder=0.5, linewidth=0)
+        ax.fill(xs, ys, color=LAND, zorder=1, linewidth=0)
+    ax.add_collection(LineCollection(province, colors=OUTER, linewidths=0.68, alpha=0.94, zorder=13))
+    min_x, max_x, min_y, max_y = bounds
+    ax.set_xlim(min_x - 0.065 * (max_x - min_x), max_x + 0.065 * (max_x - min_x))
+    ax.set_ylim(min_y - 0.045 * (max_y - min_y), max_y + 0.045 * (max_y - min_y))
+    ax.set_aspect("equal", adjustable="box")
+    ax.axis("off")
+
+
+def draw_activity_regions(ax, x_grid, y_grid, outer_mask, core_mask):
+    """Draw two clean, nested activity regions below the network."""
+    valid = ~np.ma.getmaskarray(outer_mask)
+    layers = [
+        (np.ma.masked_where(~valid, np.ma.filled(outer_mask, False).astype(float)), "#DCE8F1", 0.72),
+        (np.ma.masked_where(~valid, np.ma.filled(core_mask, False).astype(float)), "#AFC8DA", 0.82),
+    ]
+    for index, (mask, color, alpha) in enumerate(layers):
+        ax.contourf(
+            x_grid,
+            y_grid,
+            mask,
+            levels=[0.5, 1.5],
+            colors=[color],
+            alpha=alpha,
+            antialiased=True,
+            zorder=2 + index,
+        )
+
+
+def activity_coverage_km2(x_grid, y_grid, score, threshold):
+    """Approximate true ground area for a Web-Mercator activity mask."""
+    x_axis = x_grid[0, :]
+    y_axis = y_grid[:, 0]
+    dx = float(np.median(np.diff(x_axis)))
+    dy = float(np.median(np.diff(y_axis)))
+    radius = 6_378_137.0
+    lat = 2 * np.arctan(np.exp(y_axis / radius)) - np.pi / 2
+    row_area = dx * dy * np.cos(lat) ** 2 / 1_000_000
+    cell_area = np.broadcast_to(row_area[:, None], score.shape)
+    return float(cell_area[np.ma.filled(score >= threshold, False)].sum())
+
+
+def gaussian_smooth_masked(score, sigma_x=7.5, sigma_y=10.0):
+    """Gaussian smoothing with mask-normalized separable convolution."""
+    valid = ~np.ma.getmaskarray(score)
+    values = np.ma.filled(score, 0).astype(float)
+
+    def kernel(sigma):
+        radius = int(math.ceil(3 * sigma))
+        axis = np.arange(-radius, radius + 1, dtype=float)
+        weights = np.exp(-0.5 * (axis / sigma) ** 2)
+        return weights / weights.sum()
+
+    def convolve_axis(array, weights, axis):
+        return np.apply_along_axis(lambda row: np.convolve(row, weights, mode="same"), axis, array)
+
+    weights = valid.astype(float)
+    for axis, sigma in ((1, sigma_x), (0, sigma_y)):
+        k = kernel(sigma)
+        values = convolve_axis(values * weights, k, axis)
+        weights = convolve_axis(weights, k, axis)
+        values = np.divide(values, weights, out=np.zeros_like(values), where=weights > 1e-9)
+        weights = valid.astype(float)
+    return np.ma.masked_where(~valid, values)
+
+
+def cell_area_grid_km2(x_grid, y_grid):
+    x_axis = x_grid[0, :]
+    y_axis = y_grid[:, 0]
+    dx = float(np.median(np.diff(x_axis)))
+    dy = float(np.median(np.diff(y_axis)))
+    radius = 6_378_137.0
+    lat = 2 * np.arctan(np.exp(y_axis / radius)) - np.pi / 2
+    return np.broadcast_to((dx * dy * np.cos(lat) ** 2 / 1_000_000)[:, None], x_grid.shape)
+
+
+def calibrated_region_mask(score, cell_area, target_km2, min_cells, max_components):
+    """Find a clean region whose area stays close to the requested total."""
+    valid = ~np.ma.getmaskarray(score)
+    values = np.ma.filled(score, -1)
+    candidates = np.linspace(float(values[valid].max()), float(values[valid].min()), 360)
+    best = None
+    for threshold in candidates:
+        kept = keep_large_components((values >= threshold) & valid, min_cells, max_components)
+        area = float(cell_area[kept].sum())
+        error = abs(area - target_km2)
+        if best is None or error < best[0]:
+            best = (error, kept, area, threshold)
+    _, kept, area, threshold = best
+    return np.ma.masked_where(~valid, kept), area, threshold
 
 
 def bird_surface(bounds, nx=190, ny=230):
@@ -671,65 +876,53 @@ def bird_surface(bounds, nx=190, ny=230):
 
 def draw_bird(network, context):
     province, districts, bounds = context
-    fig, ax = base_figure()
-    draw_geography(ax, province, districts, bounds)
-    x_grid, y_grid, score = bird_surface(bounds)
-    levels = [0.18, 0.36, 0.56, 0.74, 1.01]
-    colors = ["#DDEFE9", "#B8DED2", "#75C0A5", "#2E9C7B"]
-    ax.contourf(x_grid, y_grid, score, levels=levels, colors=colors, alpha=0.56, antialiased=True, zorder=2)
-    ax.contour(x_grid, y_grid, score, levels=[0.36, 0.56, 0.74], colors=["#80BDAA", "#4FA98E", "#23866F"], linewidths=[0.28, 0.38, 0.48], alpha=0.55, zorder=3)
-    draw_network(ax, network["display"], "gray", 0.72)
-    priority, affected_lines = bird_public_analysis(network, (x_grid, y_grid, score))
-    ax.add_collection(LineCollection(priority, colors="#147F72", linewidths=0.40, alpha=0.55, zorder=8, capstyle="round"))
-
-    add_cards(
-        fig,
-        [
-            ("省域记录鸟类", "468种"),
-            ("模型目标物种", "64种"),
-            ("识别生境斑块", "274个"),
-            ("重要生态廊道", "12条"),
-        ],
-        TEAL,
+    fig, ax, paper = paper_map_figure()
+    draw_paper_geography(ax, province, bounds, paper)
+    x_grid, y_grid, public_score = bird_surface(bounds)
+    score = gaussian_smooth_masked(bird_relief_surface(x_grid, y_grid, public_score))
+    cell_area = cell_area_grid_km2(x_grid, y_grid)
+    radius = 6_378_137.0
+    lon_grid = np.degrees(x_grid / radius)
+    lat_grid = np.degrees(2 * np.arctan(np.exp(y_grid / radius)) - np.pi / 2)
+    corridor_score = np.ma.masked_where(
+        np.ma.getmaskarray(score),
+        bird_activity(lon_grid, lat_grid),
     )
-    inset = add_inset_frame(fig, TEAL)
-    score_values = np.ma.filled(score, -1)
-    focus_index = np.unravel_index(np.argmax(score_values), score_values.shape)
-    focus_xy = (float(x_grid[focus_index]), float(y_grid[focus_index]))
-    rx, ry = 34_000, 29_000
-    x_mask = np.abs(x_grid[0, :] - focus_xy[0]) < rx
-    y_mask = np.abs(y_grid[:, 0] - focus_xy[1]) < ry
-    inset.contourf(x_grid[np.ix_(y_mask, x_mask)], y_grid[np.ix_(y_mask, x_mask)], score[np.ix_(y_mask, x_mask)], levels=levels, colors=colors, alpha=0.66, zorder=1)
-    local_network = []
-    local_priority = []
-    for segments in network["display"].values():
-        local_network.extend([segment for segment in segments if any(abs(x - focus_xy[0]) < rx and abs(y - focus_xy[1]) < ry for x, y in segment)])
-    for segment in priority:
-        if any(abs(x - focus_xy[0]) < rx and abs(y - focus_xy[1]) < ry for x, y in segment):
-            local_priority.append(segment)
-    inset.add_collection(LineCollection(local_network, colors="#9AA8B5", linewidths=0.55, alpha=0.48, zorder=2))
-    inset.add_collection(LineCollection(local_priority, colors="#147F72", linewidths=1.25, alpha=0.86, zorder=3, capstyle="round"))
-    sample_nodes = []
-    for segment in local_priority[:: max(1, len(local_priority) // 55)]:
-        sample_nodes.append(segment[0])
-    if sample_nodes:
-        sample_nodes = np.asarray(sample_nodes)
-        inset.scatter(sample_nodes[:, 0], sample_nodes[:, 1], s=8, c=TEAL, edgecolors=WHITE, linewidths=0.35, alpha=0.85, zorder=4)
-    inset.set_xlim(focus_xy[0] - rx, focus_xy[0] + rx)
-    inset.set_ylim(focus_xy[1] - ry, focus_xy[1] + ry)
-    inset.set_aspect("equal")
-    add_leader(fig, ax, focus_xy, TEAL)
-    inset.text(0.05, 0.05, "活动潜势  ·  重点区  ·  优先治理区段", transform=inset.transAxes, fontsize=6.7, color=MUTED, zorder=8)
+    outer_score = gaussian_smooth_masked(
+        np.ma.maximum(0.80 * score / max(float(score.max()), 1e-9), corridor_score),
+        sigma_x=5.0,
+        sigma_y=6.5,
+    )
+    outer_mask, outer_area, _ = calibrated_region_mask(outer_score, cell_area, 18_000, 38, 5)
+    core_mask, core_area, _ = calibrated_region_mask(score, cell_area, 5_544.38, 22, 8)
+    outer_mask = np.ma.masked_where(
+        np.ma.getmaskarray(outer_mask),
+        np.ma.filled(outer_mask, False) | np.ma.filled(core_mask, False),
+    )
+    draw_activity_regions(ax, x_grid, y_grid, outer_mask, core_mask)
+
+    # Print boundaries and transmission routes after assembling the paper
+    # relief, matching the approved concept: every route remains continuous.
+    ax.add_collection(LineCollection(districts, colors=DISTRICT, linewidths=0.30, alpha=0.60, zorder=10))
+    draw_network(ax, network["display"], "color", 0.94, z_offset=10)
+    ax.add_collection(LineCollection(province, colors=OUTER, linewidths=0.70, alpha=0.96, zorder=20))
+    core_analysis = np.ma.masked_where(
+        np.ma.getmaskarray(core_mask),
+        np.ma.filled(core_mask, False).astype(float),
+    )
+    _, affected_lines = bird_public_analysis(network, (x_grid, y_grid, core_analysis))
 
     handles = [
-        Line2D([0], [0], color="#B8DED2", lw=6, alpha=0.65, label="中等活动潜势"),
-        Line2D([0], [0], color="#2E9C7B", lw=6, alpha=0.70, label="高活动潜势"),
-        Line2D([0], [0], color="#147F72", lw=1.4, alpha=0.88, label="优先治理线路区段"),
+        Line2D([0], [0], color="#DCE8F1", lw=5.2, label="活动关联区"),
+        Line2D([0], [0], color="#AFC8DA", lw=5.2, label="重点适宜区"),
+        Line2D([0], [0], color=STYLE["500plus"]["color"], lw=1.25, label="500kV及以上"),
+        Line2D([0], [0], color=STYLE["220"]["color"], lw=1.15, label="220kV"),
+        Line2D([0], [0], color=STYLE["110"]["color"], lw=1.05, label="110kV"),
     ]
-    leg = ax.legend(handles=handles, loc="lower left", bbox_to_anchor=(0.015, 0.01), ncol=3, frameon=True, facecolor=WHITE, edgecolor="#D9DEE4", framealpha=0.96, fancybox=True, fontsize=6.5, columnspacing=1.1, handlelength=1.8, borderpad=0.6)
+    leg = ax.legend(handles=handles, loc="lower center", bbox_to_anchor=(0.50, 0.004), ncol=5, frameon=True, facecolor=LAND, edgecolor="#D8DDE0", framealpha=0.97, fancybox=True, fontsize=6.2, columnspacing=1.05, handlelength=1.65, borderpad=0.58)
     for item in leg.get_texts():
         item.set_color(MUTED)
-    add_footer(fig, f"数据依据：《江苏省域鸟类多样性保护格局构建与生态廊道优化》（DOI:10.31497/zrzyxb.20241206）｜生境分布区 5,544.38 km²｜涉及优先治理线路 {affected_lines:,}条")
+    fig.text(0.055, 0.026, f"数据依据：省域鸟类生境适宜性公开研究的低分辨率分级栅格｜活动关联区约 {outer_area:,.0f} km²｜重点适宜区约 {core_area:,.0f} km²｜等面积平滑概化", fontsize=6.7, color="#777A7D", va="bottom")
     return save_figure(fig, "防鸟重点区域治理"), affected_lines
 
 
@@ -742,7 +935,19 @@ def point_distance_m(a, b):
 
 def load_fireworks():
     if not FIREWORKS.exists():
-        return None
+        rings = geometry_rings(BOUNDARY)
+        min_lon = min(point[0] for ring in rings for point in ring)
+        max_lon = max(point[0] for ring in rings for point in ring)
+        min_lat = min(point[1] for ring in rings for point in ring)
+        max_lat = max(point[1] for ring in rings for point in ring)
+        paths = [MplPath(np.asarray(ring)) for ring in rings]
+        rng = np.random.default_rng(20_260_831)
+        points = []
+        while len(points) < 84:
+            candidate = (float(rng.uniform(min_lon, max_lon)), float(rng.uniform(min_lat, max_lat)))
+            if any(path.contains_point(candidate) for path in paths):
+                points.append(candidate)
+        return points, 0, "脱敏仿真点位，仅用于缓冲筛查方法演示"
     data = json.loads(FIREWORKS.read_text(encoding="utf-8"))
     return [(float(item["lon"]), float(item["lat"])) for item in data.get("points", [])], data.get("source_count", 0), data.get("source_note", "")
 
@@ -781,7 +986,7 @@ def draw_fireworks(network, context, fireworks):
     add_cards(
         fig,
         [
-            ("公开燃放点", f"{len(points):,}处"),
+            (("公开燃放点" if source_count else "脱敏演示点"), f"{len(points):,}处"),
             ("500米缓冲区", f"{len(points):,}个"),
             ("命中杆塔", f"{len(hit_points):,}基"),
             ("涉及线路", f"{len(hit_lines):,}条"),
@@ -798,24 +1003,32 @@ def draw_fireworks(network, context, fireworks):
         if local_nodes:
             local_nodes = np.array(local_nodes)
             inset.scatter(local_nodes[:, 0], local_nodes[:, 1], s=7.5, c="#7190AE", edgecolors=WHITE, linewidths=0.3, alpha=0.8, zorder=4)
-        for segments in network["display"].values():
-            local = [s for s in segments if any(abs(x - focus_xy[0]) < 1600 and abs(y - focus_xy[1]) < 1600 for x, y in s)]
-            if local:
-                inset.add_collection(LineCollection(local, colors="#527DA4", linewidths=0.9, alpha=0.72, zorder=3))
+        draw_local_network(
+            inset,
+            network["display"],
+            lambda segment: any(abs(x - focus_xy[0]) < 1600 and abs(y - focus_xy[1]) < 1600 for x, y in segment),
+            width_factor=3.8,
+            alpha_factor=1.10,
+            z_offset=2,
+        )
         inset.set_xlim(focus_xy[0] - 1600, focus_xy[0] + 1600)
         inset.set_ylim(focus_xy[1] - 1600, focus_xy[1] + 1600)
         inset.set_aspect("equal")
         add_leader(fig, ax, focus_xy, CORAL)
-    inset.text(0.05, 0.05, "公开点位  ·  500米缓冲  ·  杆塔命中", transform=inset.transAxes, fontsize=6.7, color=MUTED, zorder=8)
+    inset.text(0.05, 0.05, f"{'公开点位' if source_count else '演示点位'}  ·  500米缓冲  ·  杆塔命中", transform=inset.transAxes, fontsize=6.7, color=MUTED, zorder=8)
     handles = [
-        Line2D([0], [0], marker="o", color="none", markerfacecolor=CORAL, markeredgecolor=WHITE, markersize=5, label="公开燃放点"),
+        Line2D([0], [0], marker="o", color="none", markerfacecolor=CORAL, markeredgecolor=WHITE, markersize=5, label=("公开燃放点" if source_count else "脱敏演示点")),
         Line2D([0], [0], marker="o", color=CORAL, markerfacecolor=CORAL, alpha=0.17, markersize=9, label="500米缓冲区"),
         Line2D([0], [0], marker="o", color="none", markerfacecolor=AMBER, markersize=4, label="命中杆塔"),
     ]
     leg = ax.legend(handles=handles, loc="lower left", bbox_to_anchor=(0.015, 0.01), ncol=3, frameon=True, facecolor=WHITE, edgecolor="#D9DEE4", framealpha=0.96, fancybox=True, fontsize=6.5, columnspacing=1.1, handlelength=1.8, borderpad=0.6)
     for item in leg.get_texts():
         item.set_color(MUTED)
-    add_footer(fig, f"数据来源：省内政府及公安机关公开通告（汇总 {source_count}份）｜仅保留脱敏点位用于方法演示｜{source_note}")
+    if source_count:
+        footer = f"数据来源：省内政府及公安机关公开通告（汇总 {source_count}份）｜仅保留脱敏点位用于方法演示｜{source_note}"
+    else:
+        footer = f"数据说明：{source_note}｜图中不包含真实燃放地点、线路名称、杆号和坐标"
+    add_footer(fig, footer)
     return save_figure(fig, "集中燃放点缓冲筛查")
 
 
