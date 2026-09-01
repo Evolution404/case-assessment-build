@@ -1,288 +1,371 @@
 #!/usr/bin/env python3
 """Generate the six management-oriented figures for the case report.
 
-These figures intentionally put external-workforce management first and keep
-algorithms in a supporting role. They read all metrics from content/case.json
-so report figures cannot silently drift from the locked narrative baseline.
+The management narrative is locked by docs/CASE-LOGIC-BASELINE.md:
+external-workforce management -> workload / quality pain points -> efficiency /
+quality improvement -> digitally enabled collaborative management.
+
+Technical methods are intentionally rendered as secondary supporting notes.
 """
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-from matplotlib.patches import FancyBboxPatch, Circle, FancyArrowPatch
 from PIL import Image
+
+from management_figure_style import (
+    AMBER,
+    AMBER_DARK,
+    AMBER_TINT,
+    BLUE,
+    BLUE_DARK,
+    BLUE_TINT,
+    FAINT,
+    GRAY,
+    GRAY_TINT,
+    INK,
+    MUTED,
+    RED,
+    RED_TINT,
+    RULE,
+    RULE_LIGHT,
+    TEAL,
+    TEAL_DARK,
+    TEAL_TINT,
+    WHITE,
+    arrow,
+    bracket_label,
+    chip,
+    dot,
+    lane_tag,
+    line,
+    make_canvas,
+    metric,
+    node,
+    rect,
+    save_figure,
+    section_label,
+    txt,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "dist" / "figures"
 CASE = json.loads((ROOT / "content" / "case.json").read_text(encoding="utf-8"))
-
-BG = "#F7F8FA"
-CARD = "#FFFFFF"
-TEXT = "#172033"
-MUTED = "#687386"
-BLUE = "#2F6FDB"
-BLUE_DARK = "#174EA6"
-BLUE_LIGHT = "#EAF2FF"
-ORANGE = "#EA7A25"
-ORANGE_LIGHT = "#FFF1E7"
-GREEN = "#2C9A5B"
-GREEN_LIGHT = "#EAF7F0"
-RED = "#D84A3A"
-BORDER = "#DCE2EA"
-GRAY = "#8B939E"
-GRAY_LIGHT = "#F0F2F4"
-
-plt.rcParams.update({
-    "font.family": ["PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "SimHei", "Arial Unicode MS"],
-    "axes.unicode_minus": False,
-    "savefig.transparent": False,
-})
+METRICS = CASE["metrics"]
 
 
-def canvas(title: str):
-    fig = plt.figure(figsize=(16, 9), dpi=150, facecolor=BG)
-    ax = fig.add_axes([0, 0, 1, 1])
-    ax.set_xlim(0, 16)
-    ax.set_ylim(0, 9)
-    ax.axis("off")
-    ax.text(0.55, 8.48, title, fontsize=25, weight="bold", color=TEXT, va="center")
-    ax.plot([0.45, 15.55], [8.08, 8.08], color=BORDER, lw=1.2)
-    return fig, ax
-
-
-def box(ax, x, y, w, h, *, fc=CARD, ec=BORDER, lw=1.3, radius=0.16, z=1):
-    patch = FancyBboxPatch(
-        (x, y), w, h,
-        boxstyle=f"round,pad=0.02,rounding_size={radius}",
-        linewidth=lw, edgecolor=ec, facecolor=fc, zorder=z,
+def fig01() -> None:
+    fig, ax, _ = make_canvas(
+        "外协队伍管理：两类痛点与两条改进路径",
+        "管理主线：工作量大 → 提效；质量难保证 → 增质",
     )
-    ax.add_patch(patch)
-    return patch
+
+    node(
+        ax, 5.2, 6.72, 5.6, 0.72, "输电运检外协队伍管理",
+        edge=BLUE_DARK, fill=WHITE, color=BLUE_DARK, size=17,
+    )
+    line(ax, (8.0, 6.72), (8.0, 6.36), color=RULE, lw=1.0)
+    line(ax, (3.9, 6.36), (12.1, 6.36), color=RULE, lw=1.0)
+    arrow(ax, (3.9, 6.36), (3.9, 6.02), color=BLUE, lw=1.25)
+    arrow(ax, (12.1, 6.36), (12.1, 6.02), color=AMBER, lw=1.25)
+
+    node(ax, 1.55, 5.22, 4.7, 0.78, "工作量大", edge=BLUE, fill=BLUE_TINT, color=BLUE_DARK, size=17)
+    node(ax, 9.75, 5.22, 4.7, 0.78, "质量难保证", edge=AMBER, fill=AMBER_TINT, color=AMBER_DARK, size=17)
+
+    section_label(ax, 1.55, 4.72, "管理压力")
+    metric(ax, 1.55, 4.28, f"{METRICS['province_poles']/10000:.1f}万基", "杆塔", color=BLUE_DARK)
+    metric(ax, 3.55, 4.28, f"{METRICS['province_lines']}条", "输电线路", color=BLUE_DARK)
+    metric(ax, 5.35, 4.28, "多类", "专项任务", color=BLUE_DARK, align="right")
+    txt(ax, 1.55, 3.62, "传统方式依靠外协全量摸排、逐项核验，重复劳动多。", size=11.2, color=MUTED)
+
+    section_label(ax, 9.75, 4.72, "监督压力")
+    metric(ax, 9.75, 4.28, f"{METRICS['alarm_photos']/10000:.1f}万张", "告警工单照片", color=AMBER_DARK)
+    metric(ax, 12.10, 4.28, f"{METRICS['patrol_photos_monthly']/10000:.0f}万张/月", "巡视照片", color=AMBER_DARK)
+    txt(ax, 9.75, 3.62, "人工抽查覆盖有限，重复照片与履职异常难以全量发现。", size=11.2, color=MUTED)
+
+    lane_tag(ax, 2.03, 2.82, "提效", color=BLUE, tint=BLUE_TINT, width=1.38)
+    node(ax, 3.62, 2.68, 3.15, 0.74, "数字化筛选任务", edge=BLUE, fill=WHITE, color=BLUE_DARK, size=14.3)
+    txt(ax, 5.20, 2.22, "减少外协全量人工排查", size=11.4, color=BLUE_DARK, weight="semibold", ha="center")
+    arrow(ax, (3.41, 3.05), (3.60, 3.05), color=BLUE, lw=1.1)
+
+    lane_tag(ax, 10.22, 2.82, "增质", color=AMBER, tint=AMBER_TINT, width=1.38)
+    node(ax, 11.81, 2.68, 3.15, 0.74, "照片全量查重", edge=AMBER, fill=WHITE, color=AMBER_DARK, size=14.3)
+    txt(ax, 13.39, 2.22, "强化外协履职质量监督", size=11.4, color=AMBER_DARK, weight="semibold", ha="center")
+    arrow(ax, (11.60, 3.05), (11.79, 3.05), color=AMBER, lw=1.1)
+
+    line(ax, (5.20, 2.12), (5.20, 1.55), color=BLUE, lw=1.0)
+    line(ax, (13.39, 2.12), (13.39, 1.55), color=AMBER, lw=1.0)
+    line(ax, (5.20, 1.55), (13.39, 1.55), color=RULE, lw=1.0)
+    arrow(ax, (8.0, 1.55), (8.0, 1.22), color=TEAL, lw=1.25)
+    node(ax, 5.30, 0.52, 5.40, 0.70, "数智协同外协管理", edge=TEAL, fill=TEAL_TINT, color=TEAL_DARK, size=17)
+
+    save_figure(fig, OUT, "01-外协管理两大痛点.png")
 
 
-def text(ax, x, y, value, *, size=14, color=TEXT, weight="normal", ha="left", va="center", z=5, rotation=0):
-    return ax.text(x, y, value, fontsize=size, color=color, weight=weight, ha=ha, va=va, zorder=z, rotation=rotation)
+def fig03() -> None:
+    fig, ax, _ = make_canvas(
+        "提效管任务，增质管履职",
+        "统一机制：机器负责全量筛选和重复劳动，人员负责专业判断、现场核验和管理责任",
+    )
 
+    txt(ax, 0.86, 6.96, "输电运检外协队伍管理", size=14.2, color=INK, weight="semibold")
+    line(ax, (3.28, 6.96), (15.10, 6.96), color=RULE, lw=0.9)
 
-def arrow(ax, start, end, *, color=BLUE, lw=2.6, style="-|>", z=3):
-    ax.add_patch(FancyArrowPatch(start, end, arrowstyle=style, mutation_scale=18, color=color, lw=lw, zorder=z))
-
-
-def header(ax, x, y, w, label, color):
-    box(ax, x, y, w, 0.58, fc=color, ec=color, lw=0, radius=0.16)
-    text(ax, x + w / 2, y + 0.29, label, size=18, color="white", weight="bold", ha="center")
-
-
-def metric_row(ax, x, y, metric, desc, color):
-    ax.add_patch(Circle((x, y), 0.12, fc=color, ec="none"))
-    text(ax, x + 0.28, y, metric, size=17, color=color, weight="bold")
-    text(ax, x + 1.62, y, desc, size=13, color=TEXT)
-
-
-def flow_box(ax, x, y, w, label, *, color=BLUE, light=BLUE_LIGHT, size=15):
-    box(ax, x, y, w, 0.62, fc=light, ec=color, lw=1.4, radius=0.12)
-    text(ax, x + w / 2, y + 0.31, label, size=size, color=color, weight="bold", ha="center")
-
-
-def save(fig, filename: str):
-    OUT.mkdir(parents=True, exist_ok=True)
-    path = OUT / filename
-    fig.savefig(path, dpi=150, facecolor=BG, bbox_inches=None, pad_inches=0)
-    plt.close(fig)
-    print(f"[management-figure] {path}")
-
-
-def fig01():
-    fig, ax = canvas("外协管理两大痛点")
-    box(ax, 0.7, 1.45, 5.2, 6.0, fc=CARD, ec=BLUE, lw=1.5, radius=0.18)
-    header(ax, 1.2, 7.0, 4.2, "工作量大", BLUE)
-    metric_row(ax, 1.35, 6.25, f"{CASE['metrics']['province_poles']/10000:.1f}万基", "杆塔", BLUE_DARK)
-    metric_row(ax, 1.35, 5.55, f"{CASE['metrics']['province_lines']}条", "输电线路", BLUE_DARK)
-    metric_row(ax, 1.35, 4.85, "多类", "专项任务", BLUE_DARK)
-    metric_row(ax, 1.35, 4.15, "大量", "人工逐项排查", BLUE_DARK)
-    header(ax, 1.35, 2.25, 3.9, "提效", BLUE)
-    text(ax, 3.3, 1.84, "减少外协无效排查", size=13, color=BLUE_DARK, weight="bold", ha="center")
-
-    ax.add_patch(Circle((8.0, 4.75), 1.45, fc=CARD, ec=BLUE, lw=2.0))
-    ax.add_patch(Circle((8.0, 4.75), 1.72, fc="none", ec="#A8C4F3", lw=1.2, ls="--"))
-    text(ax, 8.0, 5.08, "输电运检", size=17, weight="bold", ha="center")
-    text(ax, 8.0, 4.55, "外协队伍管理", size=22, color=BLUE_DARK, weight="bold", ha="center")
-
-    box(ax, 10.1, 1.45, 5.2, 6.0, fc=CARD, ec=ORANGE, lw=1.5, radius=0.18)
-    header(ax, 10.6, 7.0, 4.2, "质量难保证", ORANGE)
-    metric_row(ax, 10.75, 6.25, f"{CASE['metrics']['alarm_photos']/10000:.1f}万张", "告警工单照片", ORANGE)
-    metric_row(ax, 10.75, 5.55, f"{CASE['metrics']['patrol_photos_monthly']/10000:.0f}万张/月", "巡视照片", ORANGE)
-    metric_row(ax, 10.75, 4.85, "有限", "人工抽查", ORANGE)
-    metric_row(ax, 10.75, 4.15, "困难", "重复照片发现", ORANGE)
-    header(ax, 10.75, 2.25, 3.9, "增质", ORANGE)
-    text(ax, 12.7, 1.84, "强化外协履职监督", size=13, color=RED, weight="bold", ha="center")
-
-    arrow(ax, (5.55, 2.0), (7.1, 1.05), color=BLUE)
-    arrow(ax, (10.45, 2.0), (8.9, 1.05), color=ORANGE)
-    box(ax, 5.25, 0.55, 5.5, 0.8, fc=GREEN, ec=GREEN, lw=0, radius=0.16)
-    text(ax, 8.0, 0.95, "数智协同外协管理", size=20, color="white", weight="bold", ha="center")
-    save(fig, "01-外协管理两大痛点.png")
-
-
-def fig03():
-    fig, ax = canvas("“提效管任务、增质管履职”总体模型")
-    box(ax, 3.2, 7.05, 9.6, 0.75, fc=BLUE_DARK, ec=BLUE_DARK, lw=0, radius=0.14)
-    text(ax, 8.0, 7.43, "输电运检外协队伍管理", size=23, color="white", weight="bold", ha="center")
-    left = ["工作量大", "提效", "数字化筛选", "候选任务清单", "外协精准核验"]
-    right = ["质量难保证", "增质", "照片全量查重", "异常候选", "管理人员重点复核"]
-    ys = [6.1, 5.05, 4.0, 2.95, 1.9]
-    for i, (l, r, y) in enumerate(zip(left, right, ys)):
-        flow_box(ax, 1.25, y, 5.1, l, color=BLUE, light=BLUE_LIGHT, size=17 if i < 2 else 15)
-        flow_box(ax, 9.65, y, 5.1, r, color=ORANGE, light=ORANGE_LIGHT, size=17 if i < 2 else 15)
-        if i < len(ys) - 1:
-            arrow(ax, (3.8, y), (3.8, ys[i+1] + 0.67), color=BLUE, lw=2.2)
-            arrow(ax, (12.2, y), (12.2, ys[i+1] + 0.67), color=ORANGE, lw=2.2)
-    box(ax, 4.2, 0.55, 7.6, 0.82, fc=GREEN_LIGHT, ec=GREEN, lw=1.5, radius=0.14)
-    text(ax, 8.0, 0.96, "人海式管理  →  数智协同管理", size=21, color=GREEN, weight="bold", ha="center")
-    arrow(ax, (3.8, 1.9), (6.2, 1.36), color=BLUE, lw=2.0)
-    arrow(ax, (12.2, 1.9), (9.8, 1.36), color=ORANGE, lw=2.0)
-    save(fig, "03-提效增质总体模型.png")
-
-
-def fig04():
-    fig, ax = canvas("提效：外协任务数字化筛选统一流程")
-    box(ax, 0.6, 1.25, 5.7, 6.5, fc=CARD, ec="#C8CDD4", lw=1.4)
-    header(ax, 0.6, 7.17, 5.7, "传统模式（人海排查）", GRAY)
-    trad = ["全量台账 / 数据", "外协人员逐项查找", "大范围现场排查", "管理人员复核"]
-    ty = [6.1, 4.9, 3.7, 2.5]
-    for i, (label, y) in enumerate(zip(trad, ty)):
-        flow_box(ax, 2.0, y, 3.5, label, color=GRAY, light=GRAY_LIGHT, size=14)
-        if i < 3:
-            arrow(ax, (3.75, y), (3.75, ty[i+1] + 0.67), color=GRAY, lw=1.8)
-    text(ax, 1.05, 4.55, "人找问题", size=15, color=TEXT, weight="bold", rotation=90, ha="center")
-    text(ax, 6.85, 4.5, "VS", size=30, color=BLUE_DARK, weight="bold", ha="center")
-
-    box(ax, 7.35, 1.25, 8.05, 6.5, fc=CARD, ec=BLUE, lw=1.5)
-    header(ax, 7.35, 7.17, 8.05, "数字化模式（精准核验）", BLUE)
-    digi = ["全量数据", "系统自动筛选", "候选任务清单", "外协精准核验", "结果回写闭环"]
-    dy = [6.22, 5.15, 4.08, 3.01, 1.94]
-    for i, (label, y) in enumerate(zip(digi, dy)):
-        flow_box(ax, 9.1, y, 3.8, label, color=BLUE, light=BLUE_LIGHT, size=14)
-        if i < 4:
-            arrow(ax, (11.0, y), (11.0, dy[i+1] + 0.67), color=BLUE, lw=1.8)
-    text(ax, 8.15, 4.6, "系统找重点\n人做判断", size=15, color=BLUE_DARK, weight="bold", ha="center")
-
-    scenarios = [("交叉跨越", "自动筛查"), ("鸟类活动", "重点区域筛查"), ("集中燃放点", "周边杆塔筛查")]
-    sy = [5.72, 4.38, 3.04]
-    for (a, b), y in zip(scenarios, sy):
-        box(ax, 13.25, y, 1.72, 0.94, fc=CARD, ec=BLUE, lw=1.2, radius=0.1)
-        text(ax, 14.11, y + 0.60, a, size=11.8, weight="bold", ha="center")
-        text(ax, 14.11, y + 0.28, b, size=10.5, color=MUTED, ha="center")
-
-    box(ax, 0.9, 0.36, 14.2, 0.62, fc="#F7FAFF", ec="#D4E2FA", lw=1.0, radius=0.12)
-    text(ax, 1.25, 0.67, "价值提升：", size=13.5, color=BLUE_DARK, weight="bold")
-    text(ax, 3.0, 0.67, "✓ 排查范围更精准    ✓ 人员投入更高效    ✓ 风险识别更及时    ✓ 管理闭环更可靠", size=12.7, color=TEXT, weight="bold")
-    save(fig, "04-外协任务数字化筛选流程.png")
-
-
-def fig08():
-    fig, ax = canvas("增质：外协照片质量督查原理与示例")
-    labels = [
-        ("外协完成任务", BLUE), ("海量作业照片", BLUE), ("照片全量查重", BLUE),
-        ("疑似异常", ORANGE), ("管理人员重点复核", GREEN),
+    columns = [
+        (2.35, "管理痛点"),
+        (5.15, "管理目标"),
+        (7.98, "全量筛选"),
+        (10.82, "人员判断"),
+        (13.66, "管理闭环"),
     ]
-    xs = [0.55, 3.7, 6.85, 10.0, 13.15]
-    for i, ((label, c), x) in enumerate(zip(labels, xs)):
-        box(ax, x, 4.75, 2.3, 2.6, fc=CARD, ec=c, lw=1.3)
-        header(ax, x + 0.14, 6.98, 2.02, label, c)
-        body = {
-            "外协完成任务": ("拍照 / 上传", ""),
-            "海量作业照片": ("人工无法逐张检查", "数量远超人工能力"),
-            "照片全量查重": ("系统自动比对", "全量检测相似照片"),
-            "疑似异常": ("疑似重复 / 异常", "自动生成清单"),
-            "管理人员重点复核": ("聚焦疑似问题", "重点复核与处置"),
-        }[label]
-        text(ax, x + 1.15, 5.85, body[0], size=14, color=RED if label == "疑似异常" else (GREEN if label == "管理人员重点复核" else BLUE_DARK if label == "照片全量查重" else TEXT), weight="bold", ha="center")
-        if body[1]: text(ax, x + 1.15, 5.38, body[1], size=11, color=MUTED, ha="center")
-        if i < 4: arrow(ax, (x + 2.32, 6.0), (xs[i+1] - 0.05, 6.0), color=BLUE, lw=2.0)
+    for x, label in columns:
+        txt(ax, x, 6.45, label, size=10.4, color=MUTED, weight="semibold", ha="center")
 
-    text(ax, 8.0, 4.35, "系统全量检查，人员重点复核", size=20, color=BLUE_DARK, weight="bold", ha="center")
-    paths = [ROOT / "assets" / "images" / "pair-1-a.jpg", ROOT / "assets" / "images" / "pair-1-b.jpg"]
-    slots = [(0.75, 0.62, 5.65, 3.35, "示例A"), (9.6, 0.62, 5.65, 3.35, "示例B")]
-    for path, (x, y, w, h, tag) in zip(paths, slots):
-        box(ax, x, y, w, h, fc="#EAF2FF", ec=BLUE_DARK, lw=1.2, radius=0.04)
-        if path.exists():
-            img = Image.open(path).convert("RGB")
-            ax.imshow(img, extent=[x + 0.04, x + w - 0.04, y + 0.04, y + h - 0.04], aspect="auto", zorder=2)
-        else:
-            text(ax, x + w/2, y + h/2, "脱敏示例照片", size=17, color=BLUE_DARK, weight="bold", ha="center")
-        box(ax, x, y + h - 0.38, 0.9, 0.38, fc=BLUE_DARK, ec=BLUE_DARK, lw=0, radius=0.02, z=4)
-        text(ax, x + 0.45, y + h - 0.19, tag, size=11.5, color="white", weight="bold", ha="center", z=5)
-    box(ax, 6.75, 1.55, 2.5, 0.78, fc=BLUE_DARK, ec=BLUE_DARK, lw=0, radius=0.24)
-    text(ax, 8.0, 1.94, "高度相似", size=18, color="white", weight="bold", ha="center")
-    text(ax, 8.0, 0.44, "技术支撑：pHash 快速召回 + CLIP 语义复核；管理结论仍由人员终审", size=11.5, color=MUTED, ha="center")
-    save(fig, "08-照片质量督查流程与示例.png")
+    lane_tag(ax, 0.84, 5.02, "提效", color=BLUE, tint=BLUE_TINT, width=1.20)
+    eff_nodes = [
+        (1.25, 4.62, 2.20, "工作量大"),
+        (4.05, 4.62, 2.20, "减少无效排查"),
+        (6.85, 4.62, 2.25, "数字化筛选"),
+        (9.65, 4.62, 2.35, "外协精准核验"),
+        (12.55, 4.62, 2.45, "任务结果闭环"),
+    ]
+    for i, (x, y, w, label) in enumerate(eff_nodes):
+        node(ax, x, y, w, 0.82, label, edge=BLUE if i in (0, 2) else RULE, fill=BLUE_TINT if i == 0 else WHITE, color=BLUE_DARK if i in (0, 1, 2) else INK, size=13.2)
+        if i < len(eff_nodes) - 1:
+            nx = eff_nodes[i + 1][0]
+            arrow(ax, (x + w, y + 0.41), (nx - 0.10, y + 0.41), color=BLUE, lw=1.15)
+    txt(ax, 8.0, 4.12, "全部任务 → 机器筛选 → 人工核验", size=10.4, color=BLUE_DARK, ha="center")
+
+    lane_tag(ax, 0.84, 2.86, "增质", color=AMBER, tint=AMBER_TINT, width=1.20)
+    qua_nodes = [
+        (1.25, 2.46, 2.20, "质量难保证"),
+        (4.05, 2.46, 2.20, "强化履职监督"),
+        (6.85, 2.46, 2.25, "照片全量查重"),
+        (9.65, 2.46, 2.35, "异常重点复核"),
+        (12.55, 2.46, 2.45, "质量问题闭环"),
+    ]
+    for i, (x, y, w, label) in enumerate(qua_nodes):
+        node(ax, x, y, w, 0.82, label, edge=AMBER if i in (0, 2) else RULE, fill=AMBER_TINT if i == 0 else WHITE, color=AMBER_DARK if i in (0, 1, 2) else INK, size=13.2)
+        if i < len(qua_nodes) - 1:
+            nx = qua_nodes[i + 1][0]
+            arrow(ax, (x + w, y + 0.41), (nx - 0.10, y + 0.41), color=AMBER, lw=1.15)
+    txt(ax, 8.0, 1.96, "全部照片 → 机器筛选 → 人工核验", size=10.4, color=AMBER_DARK, ha="center")
+
+    arrow(ax, (8.0, 1.65), (8.0, 1.28), color=TEAL, lw=1.2)
+    node(ax, 5.22, 0.52, 5.56, 0.72, "人海式管理  →  数智协同管理", edge=TEAL, fill=TEAL_TINT, color=TEAL_DARK, size=16.5)
+
+    save_figure(fig, OUT, "03-提效增质总体模型.png")
 
 
-def fig09():
-    fig, ax = canvas("增质成果：告警工单照片全量查重")
-    box(ax, 5.6, 7.05, 4.8, 0.62, fc=GREEN_LIGHT, ec=GREEN, lw=1.2, radius=0.16)
-    text(ax, 8.0, 7.36, f"候选命中率  {CASE['metrics']['alarm_candidate_hit_rate']}%", size=18, color=GREEN, weight="bold", ha="center")
+def _flow_lane(ax, y: float, nodes: list[tuple[float, float, str]], *, color: str, tint: str, active_indices: set[int]) -> None:
+    for i, (x, w, label) in enumerate(nodes):
+        node(
+            ax, x, y, w, 0.74, label,
+            edge=color if i in active_indices else RULE,
+            fill=tint if i == min(active_indices) else WHITE,
+            color=color if i in active_indices else INK,
+            size=12.5,
+        )
+        if i < len(nodes) - 1:
+            next_x = nodes[i + 1][0]
+            arrow(ax, (x + w, y + 0.37), (next_x - 0.10, y + 0.37), color=color, lw=1.0)
+
+
+def fig04() -> None:
+    fig, ax, _ = make_canvas(
+        "提效：数字化筛选减少外协全量人工排查",
+        "从“外协到处找”转为“系统先筛选、外协按清单精准核验”",
+    )
+
+    section_label(ax, 0.85, 6.83, "传统模式")
+    txt(ax, 2.10, 6.83, "人海排查", size=12.4, color=GRAY, weight="semibold")
+    trad = [
+        (1.15, 2.40, "全量台账 / 数据"),
+        (4.08, 2.55, "外协逐项查找"),
+        (7.18, 2.65, "大范围现场排查"),
+        (10.42, 2.60, "管理人员复核"),
+    ]
+    _flow_lane(ax, 5.85, trad, color=GRAY, tint=GRAY_TINT, active_indices={0, 1, 2, 3})
+    txt(ax, 13.55, 6.22, "全量投入", size=11.0, color=GRAY, weight="semibold", ha="center")
+    txt(ax, 13.55, 5.86, "范围大 · 重复劳动多", size=10.0, color=MUTED, ha="center")
+
+    line(ax, (0.85, 4.90), (15.15, 4.90), color=RULE_LIGHT, lw=0.9)
+    txt(ax, 8.0, 4.63, "管理方式改变", size=10.2, color=MUTED, ha="center")
+    arrow(ax, (8.0, 4.43), (8.0, 4.07), color=BLUE, lw=1.15)
+
+    section_label(ax, 0.85, 3.82, "数字化模式", color=BLUE_DARK)
+    txt(ax, 2.10, 3.82, "精准核验", size=12.4, color=BLUE_DARK, weight="semibold")
+    digi = [
+        (0.98, 2.08, "全量数据"),
+        (3.55, 2.20, "系统自动筛选"),
+        (6.34, 2.12, "候选清单"),
+        (9.06, 2.48, "外协精准核验"),
+        (12.10, 2.28, "结果回写闭环"),
+    ]
+    _flow_lane(ax, 2.95, digi, color=BLUE, tint=BLUE_TINT, active_indices={0, 1, 2})
+    txt(ax, 8.0, 2.43, "核心价值：把“全量人工排查”压缩为“重点候选核验”", size=11.3, color=BLUE_DARK, weight="semibold", ha="center")
+
+    bracket_label(ax, 1.12, 0.63, 1.62, "技术支撑场景")
+    chips = [
+        (1.45, "交叉跨越自动筛查"),
+        (5.30, "鸟类活动重点区域筛查"),
+        (9.80, "集中燃放点周边筛查"),
+    ]
+    for x, label in chips:
+        chip(ax, x, 0.92, label, edge=RULE, fill=WHITE, color=MUTED, size=10.3, width=3.45 if x < 9 else 3.55)
+    txt(ax, 14.58, 1.11, "技术只负责找重点", size=10.2, color=FAINT, ha="right")
+
+    save_figure(fig, OUT, "04-外协任务数字化筛选流程.png")
+
+
+def _photo(ax, path: Path, x: float, y: float, w: float, h: float, tag: str) -> None:
+    rect(ax, x, y, w, h, fc=WHITE, ec=RULE, lw=0.8, radius=0.03)
+    if path.exists():
+        img = Image.open(path).convert("RGB")
+        ax.imshow(img, extent=[x + 0.03, x + w - 0.03, y + 0.03, y + h - 0.03], aspect="auto", zorder=2)
+    else:
+        txt(ax, x + w / 2, y + h / 2, "脱敏示例照片", size=13.0, color=MUTED, ha="center")
+    rect(ax, x + 0.12, y + h - 0.43, 0.78, 0.30, fc=WHITE, ec=RULE, lw=0.65, radius=0.12, z=4)
+    txt(ax, x + 0.51, y + h - 0.28, tag, size=9.2, color=INK, weight="semibold", ha="center", z=5)
+
+
+def fig08() -> None:
+    fig, ax, _ = make_canvas(
+        "增质：照片全量查重强化外协履职质量监督",
+        "从有限人工抽查升级为“全量筛选 + 异常重点复核”",
+    )
+
+    flow = [
+        (0.78, 2.05, "外协完成任务"),
+        (3.25, 2.05, "全量作业照片"),
+        (5.72, 2.05, "照片全量查重"),
+        (8.19, 1.90, "异常候选"),
+        (10.50, 2.28, "管理人员重点复核"),
+        (13.20, 2.05, "质量问题闭环"),
+    ]
+    for i, (x, w, label) in enumerate(flow):
+        is_screen = i == 2
+        is_review = i == 4
+        is_alert = i == 3
+        edge = BLUE if is_screen else AMBER if is_alert else TEAL if is_review else RULE
+        fill = BLUE_TINT if is_screen else AMBER_TINT if is_alert else TEAL_TINT if is_review else WHITE
+        color = BLUE_DARK if is_screen else AMBER_DARK if is_alert else TEAL_DARK if is_review else INK
+        node(ax, x, 6.05, w, 0.78, label, edge=edge, fill=fill, color=color, size=12.4)
+        if i < len(flow) - 1:
+            nx = flow[i + 1][0]
+            arrow(ax, (x + w, 6.44), (nx - 0.09, 6.44), color=BLUE if i < 2 else AMBER if i == 2 else TEAL, lw=1.0)
+
+    txt(ax, 8.0, 5.52, "系统全量检查，人员只聚焦疑似问题；最终管理结论仍由人员终审。", size=11.2, color=INK, weight="semibold", ha="center")
+
+    section_label(ax, 0.84, 4.88, "监督方式变化")
+    node(ax, 0.84, 3.72, 3.20, 0.72, "有限人工抽查", edge=GRAY, fill=GRAY_TINT, color=GRAY, size=13.0)
+    arrow(ax, (4.18, 4.08), (4.98, 4.08), color=BLUE, lw=1.1)
+    node(ax, 5.10, 3.72, 3.55, 0.72, "照片全量查重", edge=BLUE, fill=BLUE_TINT, color=BLUE_DARK, size=13.0)
+    txt(ax, 0.86, 3.18, "覆盖有限", size=10.3, color=MUTED)
+    txt(ax, 5.12, 3.18, "覆盖全部照片，自动生成异常候选", size=10.3, color=BLUE_DARK)
+
+    section_label(ax, 9.34, 4.88, "脱敏示例")
+    p1 = ROOT / "assets" / "images" / "pair-1-a.jpg"
+    p2 = ROOT / "assets" / "images" / "pair-1-b.jpg"
+    _photo(ax, p1, 9.34, 2.45, 2.70, 2.05, "示例 A")
+    _photo(ax, p2, 12.30, 2.45, 2.70, 2.05, "示例 B")
+    arrow(ax, (12.03, 3.47), (12.26, 3.47), color=AMBER, lw=1.1)
+    chip(ax, 11.44, 1.92, "疑似高度相似", edge=AMBER, fill=AMBER_TINT, color=AMBER_DARK, size=10.2, width=1.95)
+
+    line(ax, (0.84, 1.52), (15.10, 1.52), color=RULE_LIGHT, lw=0.9)
+    txt(ax, 0.84, 1.16, "技术支撑", size=9.8, color=FAINT, weight="semibold")
+    txt(ax, 2.05, 1.16, "pHash 快速召回 + CLIP 语义复核", size=10.1, color=MUTED)
+    txt(ax, 15.10, 1.16, "技术只负责生成候选，不替代管理判断", size=10.1, color=FAINT, ha="right")
+
+    save_figure(fig, OUT, "08-照片质量督查流程与示例.png")
+
+
+def fig09() -> None:
+    fig, ax, _ = make_canvas(
+        "增质成果：告警工单照片全量查重",
+        "从0到1建立外协作业成果真实性全量核查能力，并向常态化规模监督扩展",
+    )
+
+    section_label(ax, 0.86, 6.86, "告警工单全量查重结果")
     cards = [
-        ("1", "全量检查", f"{CASE['metrics']['alarm_photos']/10000:.1f}万张", "告警工单照片", BLUE),
-        ("2", "机器筛选", f"{CASE['metrics']['alarm_candidates']:,}对", "疑似重复候选", ORANGE),
-        ("3", "人工终审", f"{CASE['metrics']['alarm_confirmed_pairs']}对", "确认重复", RED),
+        (1.00, 3.55, f"{METRICS['alarm_photos']/10000:.1f}万张", "全量检查照片", BLUE_DARK, BLUE_TINT, BLUE),
+        (6.20, 3.55, f"{METRICS['alarm_candidates']:,}对", "疑似重复候选", AMBER_DARK, AMBER_TINT, AMBER),
+        (11.40, 3.55, f"{METRICS['alarm_confirmed_pairs']}对", "人工确认重复", RED, RED_TINT, RED),
     ]
-    xs = [0.55, 5.55, 10.55]
-    for i, ((n, title, big, sub, color), x) in enumerate(zip(cards, xs)):
-        box(ax, x, 4.25, 4.15, 2.35, fc=CARD, ec=color, lw=1.5, radius=0.14)
-        header(ax, x, 6.0, 4.15, f"{n}  {title}", color)
-        text(ax, x + 2.075, 5.20, big, size=30, color=color, weight="bold", ha="center")
-        text(ax, x + 2.075, 4.62, sub, size=14, weight="bold", ha="center")
-        if i < 2: arrow(ax, (x + 4.2, 5.35), (xs[i+1] - 0.08, 5.35), color="#B6C9EB" if i == 0 else "#F4B47E", lw=2.4)
+    for i, (x, w, big, label, color, fill, edge) in enumerate(cards):
+        rect(ax, x, 5.18, w, 1.30, fc=fill, ec=edge, lw=0.9, radius=0.07)
+        txt(ax, x + w / 2, 5.93, big, size=23, color=color, weight="semibold", ha="center")
+        txt(ax, x + w / 2, 5.47, label, size=10.8, color=INK, weight="semibold", ha="center")
+        if i < 2:
+            nx = cards[i + 1][0]
+            arrow(ax, (x + w + 0.20, 5.83), (nx - 0.20, 5.83), color=FAINT, lw=1.0)
+    chip(ax, 12.05, 4.58, f"候选复核确认率 {METRICS['alarm_candidate_hit_rate']}%", edge=RULE, fill=WHITE, color=MUTED, size=10.2, width=2.80)
 
-    text(ax, 8.0, 3.72, "能力升级对比", size=18, color=BLUE_DARK, weight="bold", ha="center")
-    box(ax, 0.85, 0.72, 14.3, 2.72, fc=CARD, ec="#C8D3E1", lw=1.2, radius=0.12)
+    section_label(ax, 0.86, 4.05, "监督能力扩展")
+    txt(ax, 5.92, 3.76, "过去", size=10.5, color=GRAY, weight="semibold", ha="center")
+    txt(ax, 11.85, 3.76, "现在", size=10.5, color=BLUE_DARK, weight="semibold", ha="center")
     rows = [
         ("覆盖范围", "少量特高压", "全电压等级"),
-        ("处理规模", "小规模", f"{CASE['metrics']['patrol_photos_monthly']/10000:.0f}万张/月"),
+        ("处理规模", "小规模筛查", f"{METRICS['patrol_photos_monthly']/10000:.0f}万张/月"),
         ("管理作用", "局部发现", "全量质量监督"),
     ]
-    text(ax, 6.9, 3.05, "过去", size=14, color=GRAY, weight="bold", ha="center")
-    text(ax, 12.0, 3.05, "现在", size=14, color=BLUE_DARK, weight="bold", ha="center")
+    y0 = 3.18
     for i, (label, before, after) in enumerate(rows):
-        y = 2.55 - i * 0.72
-        text(ax, 2.1, y, label, size=13.5, color=BLUE_DARK, weight="bold")
-        text(ax, 6.9, y, before, size=13.5, color=TEXT, ha="center")
-        arrow(ax, (8.6, y), (9.5, y), color="#9CB8E8", lw=1.6)
-        text(ax, 12.0, y, after, size=13.5, color=BLUE_DARK, weight="bold", ha="center")
-    save(fig, "09-告警工单照片全量查重成果.png")
+        y = y0 - i * 0.72
+        line(ax, (0.86, y - 0.35), (15.05, y - 0.35), color=RULE_LIGHT, lw=0.75)
+        txt(ax, 1.06, y, label, size=11.2, color=MUTED, weight="semibold")
+        txt(ax, 5.92, y, before, size=12.0, color=GRAY, ha="center")
+        arrow(ax, (7.60, y), (9.20, y), color=BLUE, lw=1.0)
+        txt(ax, 11.85, y, after, size=12.2, color=BLUE_DARK, weight="semibold", ha="center")
+
+    node(ax, 4.95, 0.52, 6.10, 0.72, "有限人工抽查  →  全量履职质量监督", edge=TEAL, fill=TEAL_TINT, color=TEAL_DARK, size=15.0)
+
+    save_figure(fig, OUT, "09-告警工单照片全量查重成果.png")
 
 
-def fig10():
-    fig, ax = canvas("外协管理方式前后对比")
-    header(ax, 2.2, 7.1, 5.5, "过去（人海式管理）", "#666A70")
-    header(ax, 8.3, 7.1, 5.5, "现在（数智协同管理）", BLUE)
-    labels = ["任务管理", "质量管理", "人的精力"]
-    before = ["外协全量摸排", "管理人员有限抽查", "大量重复劳动"]
-    after = ["系统筛选 + 外协精准核验", "照片全量查重 + 管理人员重点复核", "专业判断 + 管理闭环"]
-    ys = [5.9, 4.45, 3.0]
-    for label, b, a, y in zip(labels, before, after, ys):
-        box(ax, 0.6, y, 1.35, 1.0, fc=CARD, ec=BORDER, lw=1.0, radius=0.08)
-        text(ax, 1.275, y + 0.5, label, size=13.5, color=TEXT, weight="bold", ha="center")
-        box(ax, 2.2, y, 5.5, 1.0, fc="#F3F3F3", ec=BORDER, lw=1.0, radius=0.08)
-        box(ax, 8.3, y, 5.5, 1.0, fc="#F5FAFF", ec="#D3E2F8", lw=1.0, radius=0.08)
-        text(ax, 4.95, y + 0.5, b, size=15, color=TEXT, weight="bold", ha="center")
-        text(ax, 11.05, y + 0.5, a, size=14.5, color=BLUE_DARK, weight="bold", ha="center")
-        arrow(ax, (7.82, y + 0.5), (8.18, y + 0.5), color="#A7ADB5", lw=1.8)
-    box(ax, 0.7, 0.62, 14.6, 1.35, fc=GREEN, ec=GREEN, lw=0, radius=0.14)
-    text(ax, 8.0, 1.46, "提效管任务，增质管履职", size=25, color="white", weight="bold", ha="center")
-    text(ax, 8.0, 0.96, "实现外协队伍管理由人海式管理向数智协同管理转变", size=14.2, color="white", weight="bold", ha="center")
-    save(fig, "10-外协管理前后对比.png")
+def fig10() -> None:
+    fig, ax, _ = make_canvas(
+        "外协管理方式前后对比",
+        "最终变化不是“多了几个算法”，而是外协管理方式由人海式转向数智协同",
+    )
+
+    txt(ax, 4.65, 6.86, "过去｜人海式管理", size=13.6, color=GRAY, weight="semibold", ha="center")
+    txt(ax, 11.50, 6.86, "现在｜数智协同管理", size=13.6, color=BLUE_DARK, weight="semibold", ha="center")
+    line(ax, (7.95, 1.82), (7.95, 6.58), color=RULE, lw=0.9)
+
+    rows = [
+        ("任务管理", "外协全量摸排", "系统筛选 + 外协精准核验", BLUE),
+        ("质量管理", "管理人员有限抽查", "照片全量查重 + 异常重点复核", AMBER),
+        ("人的精力", "大量重复劳动", "专业判断 + 现场核验 + 管理闭环", TEAL),
+    ]
+    y_positions = [5.62, 4.22, 2.82]
+    for (label, before, after, color), y in zip(rows, y_positions):
+        txt(ax, 0.94, y, label, size=11.2, color=MUTED, weight="semibold")
+        dot(ax, 2.48, y, color=GRAY, r=0.045)
+        txt(ax, 2.72, y, before, size=13.0, color=INK, weight="medium")
+        arrow(ax, (7.25, y), (8.65, y), color=color, lw=1.1)
+        dot(ax, 9.02, y, color=color, r=0.052)
+        txt(ax, 9.30, y, after, size=13.0, color=BLUE_DARK if color == BLUE else AMBER_DARK if color == AMBER else TEAL_DARK, weight="semibold")
+        line(ax, (0.94, y - 0.64), (15.05, y - 0.64), color=RULE_LIGHT, lw=0.8)
+
+    lane_tag(ax, 2.68, 1.22, "提效管任务", color=BLUE, tint=BLUE_TINT, width=2.05)
+    lane_tag(ax, 5.12, 1.22, "增质管履职", color=AMBER, tint=AMBER_TINT, width=2.05)
+    arrow(ax, (7.40, 1.45), (8.42, 1.45), color=TEAL, lw=1.2)
+    node(ax, 8.62, 1.07, 4.70, 0.76, "数智协同外协管理", edge=TEAL, fill=TEAL_TINT, color=TEAL_DARK, size=15.4)
+    txt(ax, 8.0, 0.55, "机器承担全量筛选与重复劳动，人员回归专业判断与管理责任", size=10.5, color=MUTED, ha="center")
+
+    save_figure(fig, OUT, "10-外协管理前后对比.png")
 
 
-def main():
+def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
-    fig01(); fig03(); fig04(); fig08(); fig09(); fig10()
+    fig01()
+    fig03()
+    fig04()
+    fig08()
+    fig09()
+    fig10()
 
 
 if __name__ == "__main__":
