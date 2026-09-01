@@ -18,19 +18,25 @@ def docx_xml(p):
  with zipfile.ZipFile(p) as z:return z.read('word/document.xml').decode('utf-8')
 rx=docx_xml(REPORT);sx=docx_xml(SCRIPT)
 report_text=''.join(ET.fromstring(rx).itertext())
-if len(re.findall(r'[\u4e00-\u9fff]',rx))<3000:fail('report body text incomplete')
+script_text=''.join(ET.fromstring(sx).itertext())
+slide_blocks=re.findall(r'<section class="slide(?:\s|\")[\s\S]*?</section>',html)
+slide_text='。'.join(re.sub(r'<[^>]+>',' ',block) for block in slide_blocks)
+if len(re.findall(r'[\u4e00-\u9fff]',rx))<9000:fail('report body text incomplete or under-expanded')
 ai_contrast_patterns=(
  ('negative contrast ...而是',r'(?:并不是|不是|并非|已不再是|不再是|没有|并没有|不再|并不)[^。！？；\n]{0,120}[，,]?\s*而是'),
  ('negative contrast ...而在于',r'(?:并不是|不是|并非|已不再是|不再是|不在于|并不在于)[^。！？；\n]{0,120}[，,]?\s*而在于'),
 )
-ai_contrast_hits=[]
-for label,pattern in ai_contrast_patterns:
- for m in re.finditer(pattern,report_text):
-  ai_contrast_hits.append(f'{label}: {m.group(0)}')
-if ai_contrast_hits:fail('report contains AI-style negative contrast wording: '+' | '.join(ai_contrast_hits))
+def assert_no_ai_contrast(name,text):
+ normalized=re.sub(r'\s+',' ',text)
+ hits=[]
+ for label,pattern in ai_contrast_patterns:
+  for m in re.finditer(pattern,normalized):hits.append(f'{label}: {m.group(0)}')
+ if hits:fail(f'{name} contains AI-style negative contrast wording: '+' | '.join(hits))
+for name,text in (('report',report_text),('speaker script',script_text),('deck HTML',slide_text),('deck PDF',pdf_text)):
+ assert_no_ai_contrast(name,text)
 for forbidden in ('质量督查','本次质量督查','杆塔台账','9217条线路','2026-02-28','2026-06-29','本人','个疑似相似候选','个候选，并已人工确认','人工投入无法支撑全量计算','1.创新一：','2.双阶段算法：','3.创新二：','4.千万级工程化处理：'):
  if forbidden in rx:fail(f'report contains obsolete wording: {forbidden}')
-for required in ('40.1万基输电杆塔','9200余条输电线路','全省220kV及以上线路连续三个月','相关核心算法和程序均由我自主设计、开发和验证','此前由电力信息公司提供的既有照片查重能力主要覆盖少量特高压巡视照片','目前能够按月处理约1245万张巡视照片','向其他地市公司推广','传统人工方式难以支撑全量管理','5,472对疑似相似照片','确认重复348对','1.从无到有建立告警工单照片查重','2.构建pHash + CLIP双阶段筛选流程','4.建立千万级照片工程化处理能力','两条主线、一个机制','告警工单反馈照片查重和巡视照片查重均已在省公司层面开展试点','照片重复类问题19项','告警工单反馈照片重复11项','人工巡视照片重复8项','500千伏特殊通道人工巡视照片重复问题被定性为较大运检质量问题'): 
+for required in ('40.1万基输电杆塔','9200余条输电线路','全省220kV及以上线路连续三个月','相关核心算法和程序均由我自主设计、开发和验证','此前由电力信息公司提供的既有照片查重能力主要覆盖少量特高压巡视照片','目前能够按月处理约1245万张巡视照片','向其他地市公司推广','传统人工方式难以支撑全量管理','5,472对疑似相似照片','确认重复348对','1.从无到有建立告警工单照片查重','2.构建pHash + CLIP双阶段筛选流程','4.建立千万级照片工程化处理能力','两条主线、一个机制','告警工单反馈照片查重和巡视照片查重均已在省公司层面开展试点','照片重复类问题19项','告警工单反馈照片重复11项','人工巡视照片重复8项','500千伏特殊通道人工巡视照片重复问题被定性为较大运检质量问题','6438个杆塔坐标','249条线路','既有资料中记录了241处铁路跨越结果','程序只负责把疑似照片对找出来','理论组合约77.5万亿','推广时不依赖新增现场硬件'): 
  if required not in rx:fail(f'report missing required wording: {required}')
 report_page_starts=len(re.findall(r'w:type="page"',rx))+len(re.findall(r'w:pageBreakBefore',rx))
 if report_page_starts!=0:fail('report must use template-style natural pagination without explicit page breaks')
@@ -45,7 +51,7 @@ with tempfile.TemporaryDirectory(prefix='case-docx-verify-') as tmp:
   out=Path(tmp)/name;subprocess.run([str(render_python),str(renderer),str(source),'--output_dir',str(out)],cwd=ROOT,env=render_env,check=True,stdout=subprocess.DEVNULL)
   pages=len(list(out.glob('page-*.png')))
   if name=='report':
-   if not 10<=pages<=18:fail(f'report rendered to {pages} pages; template-style report should remain within 10-18 pages')
+   if not 19<=pages<=21:fail(f'report rendered to {pages} pages; expanded template-style report should remain within 19-21 pages')
   elif pages!=expected:fail(f'{name} rendered to {pages} pages, expected {expected}')
 env=os.environ.copy();env['NODE_PATH']=os.environ.get('NODE_MODULES','');subprocess.run([os.environ.get('NODE','node'),str(ROOT/'scripts/smoke_deck.mjs')],cwd=ROOT,env=env,check=True);subprocess.run([sys.executable,str(ROOT/'scripts/privacy_check.py')],cwd=ROOT,check=True)
 print('[verify] passed: report uses template-style natural pagination, deck 15 pages, script 15 pages, text/privacy/interaction checks OK')
