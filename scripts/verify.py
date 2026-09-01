@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os,re,subprocess,sys,tempfile,zipfile
 from pathlib import Path
+from xml.etree import ElementTree as ET
 ROOT=Path(__file__).resolve().parents[1];DIST=ROOT/'dist'
 REPORT=DIST/'案例考核报告-从人海作业到数智协同.docx';SCRIPT=DIST/'答辩逐字稿-从人海作业到数智协同.docx';HTML=DIST/'课题答辩-从人海作业到数智协同.html';PDF=DIST/'课题答辩-从人海作业到数智协同.pdf'
 def fail(msg):print('[verify] ERROR '+msg);sys.exit(1)
@@ -16,10 +17,20 @@ if len(pdf_text)<1500 or '电力信息公司没搞定的千万级照片查重' n
 def docx_xml(p):
  with zipfile.ZipFile(p) as z:return z.read('word/document.xml').decode('utf-8')
 rx=docx_xml(REPORT);sx=docx_xml(SCRIPT)
+report_text=''.join(ET.fromstring(rx).itertext())
 if len(re.findall(r'[\u4e00-\u9fff]',rx))<3000:fail('report body text incomplete')
+ai_contrast_patterns=(
+ ('negative contrast ...而是',r'(?:并不是|不是|并非|已不再是|不再是|没有|并没有|不再|并不)[^。！？；\n]{0,120}[，,]?\s*而是'),
+ ('negative contrast ...而在于',r'(?:并不是|不是|并非|已不再是|不再是|不在于|并不在于)[^。！？；\n]{0,120}[，,]?\s*而在于'),
+)
+ai_contrast_hits=[]
+for label,pattern in ai_contrast_patterns:
+ for m in re.finditer(pattern,report_text):
+  ai_contrast_hits.append(f'{label}: {m.group(0)}')
+if ai_contrast_hits:fail('report contains AI-style negative contrast wording: '+' | '.join(ai_contrast_hits))
 for forbidden in ('质量督查','本次质量督查','杆塔台账','9217条线路','2026-02-28','2026-06-29','本人','个疑似相似候选','个候选，并已人工确认','人工投入无法支撑全量计算','1.创新一：','2.双阶段算法：','3.创新二：','4.千万级工程化处理：'):
  if forbidden in rx:fail(f'report contains obsolete wording: {forbidden}')
-for required in ('40.1万基输电杆塔','9200余条输电线路','全省220kV及以上线路连续三个月','相关核心算法和程序均由我自主设计、开发和验证','此前由电力信息公司提供的既有照片查重能力主要覆盖少量特高压巡视照片','形成每月1245万张巡视照片的规模化全量筛查能力','向其他地市公司复制推广','传统人工方式难以支撑全量管理','5,472对疑似相似照片','确认重复348对','1.从无到有建立告警工单照片查重','2.构建pHash + CLIP双阶段筛选流程','4.建立千万级照片工程化处理能力','两条主线、一个机制','效率提升”和“底数补全','系统主动发现线索','告警工单反馈照片查重和巡视照片查重均已在省公司层面开展试点','照片重复类问题19项','告警工单反馈照片重复11项','人工巡视照片重复8项','500千伏特殊通道人工巡视照片重复问题被定性为较大运检质量问题'): 
+for required in ('40.1万基输电杆塔','9200余条输电线路','全省220kV及以上线路连续三个月','相关核心算法和程序均由我自主设计、开发和验证','此前由电力信息公司提供的既有照片查重能力主要覆盖少量特高压巡视照片','目前能够按月处理约1245万张巡视照片','向其他地市公司推广','传统人工方式难以支撑全量管理','5,472对疑似相似照片','确认重复348对','1.从无到有建立告警工单照片查重','2.构建pHash + CLIP双阶段筛选流程','4.建立千万级照片工程化处理能力','两条主线、一个机制','告警工单反馈照片查重和巡视照片查重均已在省公司层面开展试点','照片重复类问题19项','告警工单反馈照片重复11项','人工巡视照片重复8项','500千伏特殊通道人工巡视照片重复问题被定性为较大运检质量问题'): 
  if required not in rx:fail(f'report missing required wording: {required}')
 report_page_starts=len(re.findall(r'w:type="page"',rx))+len(re.findall(r'w:pageBreakBefore',rx))
 if report_page_starts!=0:fail('report must use template-style natural pagination without explicit page breaks')
