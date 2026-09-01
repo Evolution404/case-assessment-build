@@ -27,9 +27,10 @@ SPATIAL_ALIASES = {
 }
 SPATIAL_FORMATS = ("svg", "png", "emf")
 
-PRODUCTION_SPATIAL_SOURCES = tuple(
+FINAL_SPATIAL_STEMS = (*SPATIAL_ALIASES.values(), "06-鸟类活动重点区域筛查")
+FINAL_SPATIAL_FILES = tuple(
     f"{stem}.{ext}"
-    for stem in (*SPATIAL_ALIASES.keys(), "06-鸟类活动重点区域筛查")
+    for stem in FINAL_SPATIAL_STEMS
     for ext in SPATIAL_FORMATS
 )
 
@@ -50,18 +51,25 @@ EXPECTED = [
 def main():
     FIG.mkdir(parents=True, exist_ok=True)
 
-    missing_sources = [name for name in PRODUCTION_SPATIAL_SOURCES if not (FIG / name).exists()]
-    if missing_sources:
-        raise FileNotFoundError(
-            "正式空间图源缺失，禁止使用 demo.json fallback：" + "、".join(missing_sources)
-        )
-
     for source_stem, target_stem in SPATIAL_ALIASES.items():
-        for ext in SPATIAL_FORMATS:
-            src = FIG / f"{source_stem}.{ext}"
-            dst = FIG / f"{target_stem}.{ext}"
-            shutil.copy2(src, dst)
-            print(f"[case-figure] {dst.name} <- {src.name}")
+        sources = [FIG / f"{source_stem}.{ext}" for ext in SPATIAL_FORMATS]
+        targets = [FIG / f"{target_stem}.{ext}" for ext in SPATIAL_FORMATS]
+        if all(path.exists() for path in sources):
+            for src, dst in zip(sources, targets):
+                shutil.copy2(src, dst)
+                print(f"[case-figure] {dst.name} <- {src.name}")
+        elif all(path.exists() for path in targets):
+            print(f"[case-figure] reuse committed production deliverables: {target_stem}")
+        else:
+            missing = [path.name for path in sources if not path.exists()]
+            raise FileNotFoundError(
+                "正式空间图源缺失，且无已提交正式成果可复用；禁止使用 demo.json fallback："
+                + "、".join(missing)
+            )
+
+    missing_spatial = [name for name in FINAL_SPATIAL_FILES if not (FIG / name).exists()]
+    if missing_spatial:
+        raise FileNotFoundError("正式空间图三格式未生成完整：" + "、".join(missing_spatial))
 
     missing = [name for name in EXPECTED if not (FIG / name).exists()]
     if missing:

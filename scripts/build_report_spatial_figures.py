@@ -237,7 +237,7 @@ def map_context():
 
 def base_figure():
     fig = plt.figure(figsize=(12, 6.75), facecolor=BG)
-    ax = fig.add_axes([0.035, 0.055, 0.60, 0.90], facecolor=BG)
+    ax = fig.add_axes([0.025, 0.025, 0.95, 0.95], facecolor=BG)
     return fig, ax
 
 
@@ -368,8 +368,8 @@ def legend_lines(ax, include_rail=False):
         handles.append(Line2D([0], [0], marker="o", color="none", markerfacecolor=AMBER, markeredgecolor=CORAL, markersize=5, label="交跨候选"))
     leg = ax.legend(
         handles=handles,
-        loc="lower left",
-        bbox_to_anchor=(0.015, 0.01),
+        loc="upper right",
+        bbox_to_anchor=(0.985, 0.99),
         ncol=3,
         frameon=True,
         facecolor=WHITE,
@@ -527,41 +527,6 @@ def draw_crossing(network, context, railway_lines, crossings, affected, rail_seg
         ax.scatter(crossing_xy[:, 0], crossing_xy[:, 1], s=8.0, c=AMBER, edgecolors=WHITE, linewidths=0.35, alpha=0.96, zorder=9)
         ax.scatter(crossing_xy[:, 0], crossing_xy[:, 1], s=17.5, facecolors="none", edgecolors=CORAL, linewidths=0.45, alpha=0.72, zorder=10)
     legend_lines(ax, True)
-    add_cards(
-        fig,
-        [
-            ("杆塔底账", f"{network['total_poles'] / 10000:.1f}万基"),
-            ("输电线路", f"{network['total_lines']:,}条"),
-            ("交跨候选", f"{len(crossings):,}处"),
-            ("涉及线路", f"{affected:,}条"),
-        ],
-        AMBER,
-    )
-    inset = add_inset_frame(fig, AMBER)
-    if crossings:
-        focus = max(crossings, key=lambda p: p[2] == "500plus")
-        focus_xy = mercator(focus[0], focus[1])
-        rx = 5_200
-        ry = 5_400
-        draw_local_network(
-            inset,
-            network["display"],
-            lambda segment: any(abs(x - focus_xy[0]) < rx and abs(y - focus_xy[1]) < ry for x, y in segment),
-            width_factor=3.6,
-            alpha_factor=1.12,
-            z_offset=2,
-        )
-        local_rail = [s for s in rail_display if any(abs(x - focus_xy[0]) < rx and abs(y - focus_xy[1]) < ry for x, y in s)]
-        inset.add_collection(LineCollection(local_rail, colors=WHITE, linewidths=3.2, alpha=1, zorder=3))
-        inset.add_collection(LineCollection(local_rail, colors=GRAPHITE, linewidths=1.35, alpha=0.90, zorder=4))
-        inset.scatter([focus_xy[0]], [focus_xy[1]], s=74, c=AMBER, edgecolors=WHITE, linewidths=1.4, zorder=5)
-        inset.scatter([focus_xy[0]], [focus_xy[1]], s=140, facecolors="none", edgecolors=CORAL, linewidths=1.1, zorder=6)
-        inset.set_xlim(focus_xy[0] - rx, focus_xy[0] + rx)
-        inset.set_ylim(focus_xy[1] - ry, focus_xy[1] + ry)
-        inset.set_aspect("equal")
-        add_leader(fig, ax, focus_xy, AMBER)
-    inset.text(0.05, 0.05, "粗筛定位  ·  几何求交  ·  人工复核", transform=inset.transAxes, fontsize=6.7, color=MUTED, zorder=8)
-    add_footer(fig, f"数据来源：输电杆塔台账与公开铁路要素｜铁路线段 {rail_segment_count:,}段｜计算用时 {elapsed:.1f}s｜图中不保存线路名称、杆号和坐标")
     return save_figure(fig, "铁路交叉跨越识别")
 
 
@@ -976,49 +941,14 @@ def draw_fireworks(network, context, fireworks):
         ax.scatter(projected[:, 0], projected[:, 1], s=10, c=CORAL, edgecolors=WHITE, linewidths=0.45, alpha=0.94, zorder=9)
     if len(hit_projected):
         ax.scatter(hit_projected[:, 0], hit_projected[:, 1], s=2.8, c=AMBER, alpha=0.72, linewidths=0, zorder=8)
-    add_cards(
-        fig,
-        [
-            ("公开燃放点", f"{len(points):,}处"),
-            ("500米缓冲区", f"{len(points):,}个"),
-            ("命中杆塔", f"{len(hit_points):,}基"),
-            ("涉及线路", f"{len(hit_lines):,}条"),
-        ],
-        CORAL,
-    )
-    inset = add_inset_frame(fig, CORAL)
-    if points:
-        focus = max(points, key=lambda point: sum(1 for lon, lat, _ in network["poles"] if abs(lon - point[0]) < 0.009 and abs(lat - point[1]) < 0.007 and point_distance_m(point, (lon, lat)) <= 500))
-        focus_xy = mercator(*focus)
-        inset.add_patch(Circle(focus_xy, 595, facecolor=CORAL, edgecolor=CORAL, linewidth=1.0, alpha=0.12, zorder=2))
-        inset.scatter([focus_xy[0]], [focus_xy[1]], s=58, c=CORAL, edgecolors=WHITE, linewidths=1.2, zorder=5)
-        local_nodes = [mercator(lon, lat) for lon, lat, _ in network["poles"] if abs(lon - focus[0]) < 0.014 and abs(lat - focus[1]) < 0.011]
-        if local_nodes:
-            local_nodes = np.array(local_nodes)
-            inset.scatter(local_nodes[:, 0], local_nodes[:, 1], s=7.5, c="#7190AE", edgecolors=WHITE, linewidths=0.3, alpha=0.8, zorder=4)
-        draw_local_network(
-            inset,
-            network["display"],
-            lambda segment: any(abs(x - focus_xy[0]) < 1600 and abs(y - focus_xy[1]) < 1600 for x, y in segment),
-            width_factor=3.8,
-            alpha_factor=1.10,
-            z_offset=2,
-        )
-        inset.set_xlim(focus_xy[0] - 1600, focus_xy[0] + 1600)
-        inset.set_ylim(focus_xy[1] - 1600, focus_xy[1] + 1600)
-        inset.set_aspect("equal")
-        add_leader(fig, ax, focus_xy, CORAL)
-    inset.text(0.05, 0.05, "公开近似点位  ·  500米缓冲  ·  杆塔命中", transform=inset.transAxes, fontsize=6.7, color=MUTED, zorder=8)
     handles = [
         Line2D([0], [0], marker="o", color="none", markerfacecolor=CORAL, markeredgecolor=WHITE, markersize=5, label="公开燃放点"),
         Line2D([0], [0], marker="o", color=CORAL, markerfacecolor=CORAL, alpha=0.17, markersize=9, label="500米缓冲区"),
         Line2D([0], [0], marker="o", color="none", markerfacecolor=AMBER, markersize=4, label="命中杆塔"),
     ]
-    leg = ax.legend(handles=handles, loc="lower left", bbox_to_anchor=(0.015, 0.01), ncol=3, frameon=True, facecolor=WHITE, edgecolor="#D9DEE4", framealpha=0.96, fancybox=True, fontsize=6.5, columnspacing=1.1, handlelength=1.8, borderpad=0.6)
+    leg = ax.legend(handles=handles, loc="upper right", bbox_to_anchor=(0.985, 0.99), ncol=1, frameon=True, facecolor=WHITE, edgecolor="#D9DEE4", framealpha=0.96, fancybox=True, fontsize=6.5, columnspacing=1.1, handlelength=1.8, borderpad=0.6)
     for item in leg.get_texts():
         item.set_color(MUTED)
-    footer = f"数据来源：南京市公安局公开通告（核验 {source_count}份）｜公开地址按街镇/官方示意图近似定位｜{source_note}"
-    add_footer(fig, footer)
     return save_figure(fig, "集中燃放点缓冲筛查")
 
 

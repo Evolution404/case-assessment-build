@@ -26,7 +26,7 @@ import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
 from matplotlib.lines import Line2D
 
-from map_style import BG, DISTRICT, LAND, MUTED, OUTER, STYLE, TEXT, resolve_soffice
+from map_style import BG, DISTRICT, LAND, OUTER, STYLE, TEXT, resolve_soffice
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -199,7 +199,7 @@ def draw_map():
 
     fig, ax = plt.subplots(figsize=(7.2, 8.8), facecolor=BG)
     ax.set_facecolor(BG)
-    fig.subplots_adjust(left=0.035, right=0.965, top=0.895, bottom=0.075)
+    fig.subplots_adjust(left=0.02, right=0.98, top=0.98, bottom=0.02)
     for ring in province_xy:
         ax.fill([p[0] for p in ring], [p[1] for p in ring], color=LAND, zorder=0)
     # A quiet administrative layer stays below the thematic network.
@@ -228,16 +228,6 @@ def draw_map():
     ax.set_aspect("equal", adjustable="box")
     ax.axis("off")
 
-    fig.text(0.045, 0.965, "江苏省域输电线路电压等级分布", fontsize=14.6, weight="semibold", color=TEXT, va="top")
-    fig.text(
-        0.045,
-        0.925,
-        f"数据底账：{total_poles:,}基杆塔、{total_lines:,}条线路｜线路按支线拓扑重建",
-        fontsize=8.9,
-        color=MUTED,
-        va="top",
-    )
-
     handles = [
         Line2D([0], [0], color=STYLE[key]["color"], lw=max(STYLE[key]["width"] * 2.15, 1.0), alpha=STYLE[key]["alpha"], label=STYLE[key]["label"])
         for key in ["500plus", "220", "110", "35", "other_dc"]
@@ -259,27 +249,6 @@ def draw_map():
     )
     for text in legend.get_texts():
         text.set_color(TEXT)
-
-    # North arrow and a ground-distance scale bar.
-    ax.annotate("N", xy=(0.92, 0.15), xytext=(0.92, 0.105), xycoords="axes fraction", textcoords="axes fraction", ha="center", va="center", color=TEXT, fontsize=9.5, weight="bold", arrowprops=dict(arrowstyle="-|>", color=TEXT, lw=0.9))
-    mean_lat = 33.0
-    scale_projected = 100_000 / math.cos(math.radians(mean_lat))
-    bar_y = min_y + 0.04 * (max_y - min_y)
-    bar_x1 = min_x + 0.045 * (max_x - min_x)
-    bar_x2 = bar_x1 + scale_projected
-    ax.plot([bar_x1, bar_x2], [bar_y, bar_y], color=TEXT, lw=1.0, solid_capstyle="butt", zorder=10)
-    ax.plot([bar_x1, bar_x1], [bar_y - 4200, bar_y + 4200], color=TEXT, lw=0.65, zorder=10)
-    ax.plot([bar_x2, bar_x2], [bar_y - 4200, bar_y + 4200], color=TEXT, lw=0.65, zorder=10)
-    ax.text((bar_x1 + bar_x2) / 2, bar_y + 7500, "100 km", color=TEXT, fontsize=7.1, ha="center", va="bottom")
-
-    fig.text(
-        0.045,
-        0.025,
-        "说明：图中不显示地市名称、线路名称、杆号和坐标；矢量线形已简化并量化，仅用于案例方法展示。",
-        fontsize=7.8,
-        color=MUTED,
-        va="bottom",
-    )
 
     OUT.mkdir(parents=True, exist_ok=True)
     svg = OUT / f"{OUTPUT_STEM}.svg"
