@@ -1,0 +1,59 @@
+name: Render management figures review
+
+on:
+  push:
+    branches:
+      - feat/redesign-management-figures-nature-style
+    paths:
+      - scripts/build_management_figures.py
+      - scripts/management_figure_style.py
+      - .github/workflows/render-management-figures-review.yml
+
+permissions:
+  contents: write
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout review branch
+        uses: actions/checkout@v4
+        with:
+          ref: feat/redesign-management-figures-nature-style
+          fetch-depth: 0
+
+      - name: Install rendering dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fonts-noto-cjk
+          python -m pip install --upgrade pip
+          python -m pip install pillow matplotlib
+
+      - name: Render management figures
+        run: python scripts/build_management_figures.py
+
+      - name: Verify protected figures unchanged
+        run: |
+          git diff --exit-code origin/main -- \
+            'dist/figures/02-省域线路杆塔任务规模.png' \
+            'dist/figures/05-交叉跨越自动筛查.png' \
+            'dist/figures/06-鸟类活动重点区域筛查.png' \
+            'dist/figures/07-集中燃放点周边杆塔筛查.png'
+
+      - name: Commit rendered review images
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            'dist/figures/01-外协管理两大痛点.png' \
+            'dist/figures/03-提效增质总体模型.png' \
+            'dist/figures/04-外协任务数字化筛选流程.png' \
+            'dist/figures/08-照片质量督查流程与示例.png' \
+            'dist/figures/09-告警工单照片全量查重成果.png' \
+            'dist/figures/10-外协管理前后对比.png'
+          if git diff --cached --quiet; then
+            echo 'Rendered images already up to date.'
+          else
+            git commit -m 'chore: render reference-matched management figures'
+            git push origin HEAD:feat/redesign-management-figures-nature-style
+          fi
