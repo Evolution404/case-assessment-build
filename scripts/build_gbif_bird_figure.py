@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""Build the GBIF-backed bird activity screening figure.
+"""Build the GBIF-backed bird activity overlay on the formal base map.
 
 The figure uses the raw GBIF Darwin Core archive stored in data/birds and the
-same read-only transmission network used by the other report maps. It converts
-occurrence records into a province-clipped activity surface, highlights the
-transmission segments intersecting the strongest activity cells, and reports
-only derived aggregate counts.
+same formal transmission-network styling as Figure 2. Bird observations are
+used only to derive a province-clipped activity surface; raw occurrence points
+and any derived "priority line" styling are intentionally not rendered.
 """
 from __future__ import annotations
 
@@ -22,10 +21,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.collections import LineCollection
 from matplotlib.lines import Line2D
+from matplotlib.patches import Patch
 from matplotlib.path import Path as MplPath
 
-from build_report_spatial_figures import geometry_rings, load_network, map_context, draw_geography, draw_network, mercator
-from map_style import BG, LAND, MUTED, OUTER, TEXT, WHITE, resolve_soffice
+from build_base_map import geometry_rings, load_linework, mercator
+from map_style import BG, DISTRICT, LAND, OUTER, STYLE, TEXT, resolve_soffice
 
 ROOT = Path(__file__).resolve().parents[1]
 GBIF_ZIP = ROOT / "data" / "birds" / "gbif-occurrence-0046920-260806074905277.zip"
@@ -139,96 +139,109 @@ def activity_surface(points: np.ndarray, nx=170, ny=210):
     positive = positive[positive > 0]
     if not len(positive):
         raise RuntimeError("GBIF 活动栅格为空")
-    outer_threshold = float(np.quantile(positive, 0.72))
-    core_threshold = float(np.quantile(positive, 0.91))
+    low_threshold = float(np.quantile(positive, 0.70))
+    medium_threshold = float(np.quantile(positive, 0.84))
+    high_threshold = float(np.quantile(positive, 0.94))
     radius = 6_378_137.0
     x_grid = radius * np.radians(lon_grid)
     y_grid = radius * np.log(np.tan(np.pi / 4 + np.radians(lat_grid) / 2))
-    return x_grid, y_grid, score, outer_threshold, core_threshold, (lon_min, lon_max, lat_min, lat_max)
-
-
-def score_at(lon: float, lat: float, score, bounds):
-    lon_min, lon_max, lat_min, lat_max = bounds
-    ny, nx = score.shape
-    ix = int((lon - lon_min) / max(lon_max - lon_min, 1e-12) * nx)
-    iy = int((lat - lat_min) / max(lat_max - lat_min, 1e-12) * ny)
-    ix = min(max(ix, 0), nx - 1)
-    iy = min(max(iy, 0), ny - 1)
-    if np.ma.getmaskarray(score)[iy, ix]:
-        return -1.0
-    return float(score[iy, ix])
-
-
-def affected_segments(network, score, threshold, bounds):
-    segments = []
-    lines = set()
-    for start, end, line_name, _category in network["segments"]:
-        samples = [
-            start, end,
-            ((2 * start[0] + end[0]) / 3, (2 * start[1] + end[1]) / 3),
-            ((start[0] + 2 * end[0]) / 3, (start[1] + 2 * end[1]) / 3),
-        ]
-        if max(score_at(lon, lat, score, bounds) for lon, lat in samples) >= threshold:
-            segments.append([mercator(*start), mercator(*end)])
-            lines.add(line_name)
-    return segments, lines
+    return x_grid, y_grid, score, low_threshold, medium_threshold, high_threshold
 
 
 def build():
     points, stats = load_occurrences()
-    network = load_network()
-    province, districts, map_bounds = map_context()
-    x_grid, y_grid, score, outer_t, core_t, data_bounds = activity_surface(points)
-    hit_segments, hit_lines = affected_segments(network, score, core_t, data_bounds)
+    linework, _used_poles, total_poles, total_lines = load_linework()
+    province = [[mercator(lon, lat) for lon, lat in ring] for ring in geometry_rings(BOUNDARY)]
+    districts = [[mercator(lon, lat) for lon, lat in ring] for ring in geometry_rings(ROOT / "data" / "jiangsu_districts.geojson")]
+    x_grid, y_grid, score, low_t, medium_t, high_t = activity_surface(points)
 
-    fig = plt.figure(figsize=(16, 9), facecolor=BG)
-    ax = fig.add_axes([0.055, 0.075, 0.69, 0.82], facecolor=BG)
-    draw_geography(ax, province, districts, map_bounds)
-    outer = np.ma.masked_where(score < outer_t, score)
-    core = np.ma.masked_where(score < core_t, score)
-    ax.contourf(x_grid, y_grid, outer, levels=7, cmap="YlGn", alpha=0.42, zorder=2)
-    ax.contourf(x_grid, y_grid, core, levels=6, cmap="YlOrRd", alpha=0.56, zorder=3)
+    xs = [point[0] for ring in province for point in ring]
+    ys = [point[1] for ring in province for point in ring]
+    min_x, max_x = min(xs), max(xs)
+    min_y, max_y = min(ys), max(ys)
 
-    sample = points[np.linspace(0, len(points) - 1, min(len(points), 8000), dtype=int)]
-    projected = np.asarray([mercator(lon, lat) for lon, lat in sample])
-    ax.scatter(projected[:, 0], projected[:, 1], s=1.1, c="#128A3C", alpha=0.28, linewidths=0, zorder=4)
-    draw_network(ax, network["display"], "color", 0.96, z_offset=5)
-    if hit_segments:
-        ax.add_collection(LineCollection(hit_segments, colors="#D94B3E", linewidths=0.95, alpha=0.94, zorder=18, capstyle="round"))
-    ax.add_collection(LineCollection(province, colors=OUTER, linewidths=0.75, alpha=0.96, zorder=20))
+    # Reproduce Figure 2 exactly, then place the bird-activity surface above it.
+    fig, ax = plt.subplots(figsize=(7.2, 8.8), facecolor=BG)
+    ax.set_facecolor(BG)
+    fig.subplots_adjust(left=0.02, right=0.98, top=0.98, bottom=0.02)
+    for ring in province:
+        ax.fill([p[0] for p in ring], [p[1] for p in ring], color=LAND, zorder=0)
+    ax.add_collection(LineCollection(districts, colors=DISTRICT, linewidths=0.34, alpha=0.46, zorder=1))
 
-    fig.text(0.055, 0.94, "提效案例2：鸟类活动重点区域筛查", fontsize=24, weight="bold", color=TEXT)
-    fig.text(0.055, 0.905, "GBIF鸟类活动记录 → 活动热点 → 输电线路叠加 → 外协重点核验区段", fontsize=10.5, color=MUTED)
+    order = ["35", "110", "220", "other_dc", "500plus"]
+    for category in order:
+        style = STYLE[category]
+        ax.add_collection(
+            LineCollection(
+                linework.get(category, []),
+                colors=style["color"],
+                linewidths=style["width"],
+                alpha=style["alpha"],
+                zorder=style["z"],
+                capstyle="round",
+                joinstyle="round",
+            )
+        )
 
-    panel = fig.add_axes([0.775, 0.11, 0.19, 0.75], facecolor=LAND)
-    panel.set_xlim(0, 1); panel.set_ylim(0, 1); panel.axis("off")
-    panel.text(0.05, 0.95, "筛选结果", fontsize=15, weight="bold", color=TEXT, va="top")
-    cards = [("江苏省域GBIF记录", f"{stats['jiangsu_records']:,}条"), ("活动热点阈值", "省域分位数自动识别"), ("重点核验线路", f"{len(hit_lines):,}条")]
-    y = 0.78
-    for label, value in cards:
-        panel.add_patch(plt.Rectangle((0.04, y - 0.12), 0.92, 0.15, facecolor="#F7FAFE", edgecolor="#D8E1EC", lw=0.8))
-        panel.text(0.08, y - 0.01, label, fontsize=8.5, color=MUTED, va="center")
-        panel.text(0.92, y - 0.01, value, fontsize=12.5, weight="bold", color="#174EA6", va="center", ha="right")
-        y -= 0.20
-    panel.text(0.06, 0.19, "管理用途", fontsize=10, weight="bold", color=TEXT)
-    panel.text(0.06, 0.14, "系统先识别鸟类活动重点区域，\n再把穿越热点的线路转成外协\n重点巡视与防鸟装置核验清单。", fontsize=8.7, color=MUTED, va="top", linespacing=1.55)
+    activity = np.ma.masked_where(score < low_t, score)
+    max_score = float(score.max())
+    ax.contourf(
+        x_grid,
+        y_grid,
+        activity,
+        levels=[low_t, medium_t, high_t, max_score + 1e-9],
+        colors=["#F4D77E", "#E9A344", "#C65C32"],
+        alpha=0.26,
+        antialiased=True,
+        zorder=7,
+    )
+    ax.add_collection(LineCollection(province, colors=OUTER, linewidths=0.66, alpha=0.92, zorder=8))
+
+    pad_x = (max_x - min_x) * 0.08
+    pad_y = (max_y - min_y) * 0.05
+    ax.set_xlim(min_x - pad_x, max_x + pad_x)
+    ax.set_ylim(min_y - pad_y, max_y + pad_y)
+    ax.set_aspect("equal", adjustable="box")
+    ax.axis("off")
 
     handles = [
-        Line2D([0], [0], marker="o", color="none", markerfacecolor="#128A3C", markersize=4, label="GBIF鸟类活动记录"),
-        Line2D([0], [0], color="#76B947", lw=5, alpha=0.55, label="活动关联区"),
-        Line2D([0], [0], color="#F08B38", lw=5, alpha=0.70, label="活动热点区"),
-        Line2D([0], [0], color="#D94B3E", lw=1.8, label="重点核验线路"),
+        Line2D([0], [0], color=STYLE[key]["color"], lw=max(STYLE[key]["width"] * 2.15, 1.0), alpha=STYLE[key]["alpha"], label=STYLE[key]["label"])
+        for key in ["500plus", "220", "110", "35", "other_dc"]
     ]
-    leg = ax.legend(handles=handles, loc="lower left", ncol=2, frameon=True, facecolor=WHITE, edgecolor="#D9DEE4", fontsize=7.2, framealpha=0.96)
-    for item in leg.get_texts(): item.set_color(MUTED)
+    handles.append(Line2D([0], [0], color=DISTRICT, lw=0.9, alpha=0.72, label="地市界"))
+    handles.extend(
+        [
+            Line2D([0], [0], color="none", lw=0, label="鸟类活动"),
+            Patch(facecolor="#F4D77E", edgecolor="none", alpha=0.52, label="一般"),
+            Patch(facecolor="#E9A344", edgecolor="none", alpha=0.58, label="较活跃"),
+            Patch(facecolor="#C65C32", edgecolor="none", alpha=0.64, label="高活跃"),
+        ]
+    )
+    legend = ax.legend(
+        handles=handles,
+        loc="upper right",
+        bbox_to_anchor=(0.99, 0.995),
+        frameon=True,
+        facecolor="#FFFFFF",
+        edgecolor="#D7DCE2",
+        framealpha=0.96,
+        fancybox=True,
+        fontsize=8.1,
+        handlelength=2.5,
+        borderpad=0.7,
+        labelspacing=0.55,
+    )
+    for text in legend.get_texts():
+        text.set_color(TEXT)
+        if text.get_text() == "鸟类活动":
+            text.set_weight("semibold")
 
-    fig.text(0.055, 0.028, f"数据来源：GBIF occurrence download 0046920-260806074905277｜省域内有效坐标记录 {stats['jiangsu_records']:,} 条｜仅输出聚合热点和脱敏线路关系", fontsize=7.4, color="#777A7D")
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     svg = OUT_DIR / f"{OUTPUT_STEM}.svg"
     png = OUT_DIR / f"{OUTPUT_STEM}.png"
     emf = OUT_DIR / f"{OUTPUT_STEM}.emf"
-    fig.savefig(svg, format="svg", facecolor=BG)
-    fig.savefig(png, format="png", dpi=320, facecolor=BG)
+    fig.savefig(svg, format="svg", bbox_inches="tight", pad_inches=0.08, facecolor=BG)
+    fig.savefig(png, format="png", dpi=320, bbox_inches="tight", pad_inches=0.08, facecolor=BG)
     plt.close(fig)
     with tempfile.TemporaryDirectory(prefix="gbif-bird-lo-") as profile:
         subprocess.run(
@@ -250,12 +263,9 @@ def build():
         raise RuntimeError(f"EMF 导出失败：{emf}")
 
     stats.update({
-        "outer_quantile": 0.72,
-        "core_quantile": 0.91,
-        "affected_lines": len(hit_lines),
-        "affected_segments": len(hit_segments),
-        "network_poles": network["total_poles"],
-        "network_lines": network["total_lines"],
+        "activity_quantiles": {"general": 0.70, "active": 0.84, "high": 0.94},
+        "network_poles": total_poles,
+        "network_lines": total_lines,
         "outputs": {"svg": str(svg), "png": str(png), "emf": str(emf)},
     })
     SUMMARY.parent.mkdir(parents=True, exist_ok=True)
