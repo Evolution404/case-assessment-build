@@ -19,7 +19,7 @@ rx=docx_xml(REPORT);sx=docx_xml(SCRIPT)
 if len(re.findall(r'[\u4e00-\u9fff]',rx))<3000:fail('report body text incomplete')
 for forbidden in ('质量督查','本次质量督查','杆塔台账','9217条线路','2026-02-28','2026-06-29','本人','个疑似相似候选','个候选，并已人工确认','人工投入无法支撑全量计算','1.创新一：','2.双阶段算法：','3.创新二：','4.千万级工程化处理：'):
  if forbidden in rx:fail(f'report contains obsolete wording: {forbidden}')
-for required in ('40.1万基输电杆塔','9200余条输电线路','全省220kV及以上线路连续三个月','核心算法与程序均由我自主设计、开发和验证','此前由电力信息公司提供的既有照片查重能力主要覆盖少量特高压巡视照片','形成每月1245万张巡视照片的规模化全量筛查能力','相关成果已在省公司开展试点应用','向其他地市公司复制推广','传统人工方式难以支撑全量管理','5,472对疑似相似照片','确认重复348对','1.从无到有建立告警工单照片查重','2.构建pHash + CLIP双阶段筛选流程','4.建立千万级照片工程化处理能力'):
+for required in ('40.1万基输电杆塔','9200余条输电线路','全省220kV及以上线路连续三个月','相关核心算法和程序均由我自主设计、开发和验证','此前由电力信息公司提供的既有照片查重能力主要覆盖少量特高压巡视照片','形成每月1245万张巡视照片的规模化全量筛查能力','向其他地市公司复制推广','传统人工方式难以支撑全量管理','5,472对疑似相似照片','确认重复348对','1.从无到有建立告警工单照片查重','2.构建pHash + CLIP双阶段筛选流程','4.建立千万级照片工程化处理能力','两条主线、一个机制','效率提升”和“底数补全','系统主动发现线索','告警工单反馈照片查重和巡视照片查重均已在省公司层面开展试点','照片重复类问题19项','告警工单反馈照片重复11项','人工巡视照片重复8项','500千伏特殊通道人工巡视照片重复问题被定性为较大运检质量问题'): 
  if required not in rx:fail(f'report missing required wording: {required}')
 report_page_starts=len(re.findall(r'w:type="page"',rx))+len(re.findall(r'w:pageBreakBefore',rx))
 if report_page_starts!=0:fail('report must use template-style natural pagination without explicit page breaks')
