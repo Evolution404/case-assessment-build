@@ -33,6 +33,7 @@ from matplotlib.lines import Line2D
 from matplotlib.path import Path as MplPath
 from matplotlib.patches import Circle, FancyBboxPatch, Polygon
 
+from build_base_map import load_linework as load_base_linework
 from map_style import BG, CARD, DISTRICT, FAINT, LAND, MUTED, OUTER, STYLE, TEXT, WHITE, resolve_soffice
 
 
@@ -46,7 +47,7 @@ PBF = Path(
         "/Users/zhangyuxi/Desktop/004领英班/两个带来/1-工作案例-铁路交叉跨越计算/rail/jiangsu-251106.osm.pbf",
     )
 )
-FIREWORKS = ROOT / "data" / "fireworks_public_anonymized.json"
+FIREWORKS = ROOT / "data" / "fireworks_jiangsu_verified.json"
 BOUNDARY = ROOT / "data" / "jiangsu_outline.geojson"
 DISTRICTS = ROOT / "data" / "jiangsu_districts.geojson"
 
@@ -385,13 +386,14 @@ def legend_lines(ax, include_rail=False):
         item.set_color(MUTED)
 
 
-def save_figure(fig, stem):
+def save_figure(fig, stem, *, tight=False):
     OUT.mkdir(parents=True, exist_ok=True)
     svg = OUT / f"{stem}.svg"
     png = OUT / f"{stem}.png"
     facecolor = fig.get_facecolor()
-    fig.savefig(svg, format="svg", facecolor=facecolor)
-    fig.savefig(png, format="png", dpi=320, facecolor=facecolor)
+    save_kwargs = {"bbox_inches": "tight", "pad_inches": 0.08} if tight else {}
+    fig.savefig(svg, format="svg", facecolor=facecolor, **save_kwargs)
+    fig.savefig(png, format="png", dpi=320, facecolor=facecolor, **save_kwargs)
     plt.close(fig)
     with tempfile.TemporaryDirectory(prefix="report-spatial-lo-") as profile:
         subprocess.run(
@@ -898,58 +900,200 @@ def point_distance_m(a, b):
     return math.hypot(dx, dy)
 
 
+JIANGSU_CITIES = {
+    "南京", "无锡", "徐州", "常州", "苏州", "南通", "连云港",
+    "淮安", "盐城", "扬州", "镇江", "泰州", "宿迁",
+}
+
+
 def load_fireworks():
     if not FIREWORKS.exists():
         raise FileNotFoundError(
             f"已核验燃放点数据不存在：{FIREWORKS}；禁止随机生成、模拟或 fallback。"
         )
     data = json.loads(FIREWORKS.read_text(encoding="utf-8"))
-    points = [(float(item["lon"]), float(item["lat"])) for item in data.get("points", [])]
-    if not points:
+    if int(data.get("schema_version", 0)) < 2:
+        raise RuntimeError(f"省级燃放点数据 schema 版本过旧：{FIREWORKS}")
+
+    audits = data.get("cities") or []
+    audited_cities = {str(item.get("city", "")) for item in audits}
+    if audited_cities != JIANGSU_CITIES:
+        missing = sorted(JIANGSU_CITIES - audited_cities)
+        extra = sorted(audited_cities - JIANGSU_CITIES)
+        raise RuntimeError(f"燃放点省级审计必须覆盖江苏13市；缺失={missing}，异常={extra}")
+
+    sources = {str(item.get("id", "")): item for item in data.get("sources", []) if item.get("id")}
+    records = data.get("points") or []
+    if not records:
         raise RuntimeError(f"已核验燃放点数据为空：{FIREWORKS}")
-    return points, int(data.get("source_count", 0)), data.get("source_note", "")
+
+    normalized = []
+    for item in records:
+        city = str(item.get("city", ""))
+        source_id = str(item.get("source_id", ""))
+        if city not in JIANGSU_CITIES:
+            raise RuntimeError(f"燃放点城市不在江苏13市审计范围：{item}")
+        if source_id not in sources:
+            raise RuntimeError(f"燃放点缺少可追溯 source_id：{item}")
+        if not item.get("reference_year") or not item.get("coordinate_precision"):
+            raise RuntimeError(f"燃放点缺少年份或坐标精度标记：{item}")
+        lon, lat = float(item["lon"]), float(item["lat"])
+        if not (116.0 <= lon <= 122.2 and 30.5 <= lat <= 35.4):
+            raise RuntimeError(f"燃放点坐标超出江苏省域检查范围：{item}")
+        normalized.append({**item, "lon": lon, "lat": lat})
+
+    declared_points = {str(item["city"]): int(item.get("mapped_points", 0)) for item in audits}
+    actual_points = defaultdict(int)
+    for item in normalized:
+        actual_points[item["city"]] += 1
+    mismatched = {
+        city: (declared_points.get(city, 0), actual_points.get(city, 0))
+        for city in JIANGSU_CITIES
+        if declared_points.get(city, 0) != actual_points.get(city, 0)
+    }
+    if mismatched:
+        raise RuntimeError(f"燃放点城市审计数量与 points 不一致：{mismatched}")
+
+    metadata = {
+        "audited_cities": len(audited_cities),
+        "mapped_cities": len({item["city"] for item in normalized}),
+        "mapped_points": len(normalized),
+        "source_count": len(sources),
+        "reference_years": sorted({int(item["reference_year"]) for item in normalized}),
+        "scope_note": data.get("scope_note", ""),
+    }
+    return normalized, metadata
 
 
 def draw_fireworks(network, context, fireworks):
     if fireworks is None:
         return None
-    points, source_count, source_note = fireworks
-    province, districts, bounds = context
-    hit_points = []
+    records, metadata = fireworks
+    points = [(item["lon"], item["lat"]) for item in records]
+    province, districts, _bounds = context
+
+    screening_radius_m = 500
+    display_radius_m = 4_500
+
+    # Keep the business screening rule at 500 m.  The province-scale map uses a
+    # larger symbolized halo only so the influence marker remains legible.
+    hit_points = {}
     hit_lines = set()
     for point in points:
-        nearest = []
         for lon, lat, line in network["poles"]:
             if abs(lon - point[0]) > 0.009 or abs(lat - point[1]) > 0.007:
                 continue
-            distance = point_distance_m(point, (lon, lat))
-            if distance <= 500:
-                nearest.append((lon, lat, line))
+            if point_distance_m(point, (lon, lat)) <= screening_radius_m:
+                key = (round(lon, 6), round(lat, 6), line)
+                hit_points[key] = (lon, lat, line)
                 hit_lines.add(hashlib.sha1(line.encode("utf-8")).hexdigest()[:10])
-        if nearest:
-            hit_points.extend(nearest)
+    hit_points = list(hit_points.values())
 
-    fig, ax = base_figure()
-    draw_geography(ax, province, districts, bounds)
-    draw_network(ax, network["display"], "color", 0.55)
-    projected = np.array([mercator(*p) for p in points]) if points else np.empty((0, 2))
-    hit_projected = np.array([mercator(p[0], p[1]) for p in hit_points]) if hit_points else np.empty((0, 2))
-    if len(projected):
-        # A 500 m ground buffer is slightly enlarged in Web Mercator by sec(latitude).
-        for x, y in projected:
-            ax.add_patch(Circle((x, y), 595, facecolor=CORAL, edgecolor=CORAL, linewidth=0.32, alpha=0.095, zorder=7))
-        ax.scatter(projected[:, 0], projected[:, 1], s=10, c=CORAL, edgecolors=WHITE, linewidths=0.45, alpha=0.94, zorder=9)
-    if len(hit_projected):
-        ax.scatter(hit_projected[:, 0], hit_projected[:, 1], s=2.8, c=AMBER, alpha=0.72, linewidths=0, zorder=8)
+    # Reproduce Figure 2's base map exactly.  Fireworks are an overlay only;
+    # voltage colors, widths, alpha, province border and district boundaries are
+    # not altered for this thematic figure.
+    linework, _used_poles, _total_poles, _total_lines = load_base_linework()
+    xs = [point[0] for ring in province for point in ring]
+    ys = [point[1] for ring in province for point in ring]
+    min_x, max_x = min(xs), max(xs)
+    min_y, max_y = min(ys), max(ys)
+
+    fig, ax = plt.subplots(figsize=(7.2, 8.8), facecolor=BG)
+    ax.set_facecolor(BG)
+    fig.subplots_adjust(left=0.02, right=0.98, top=0.98, bottom=0.02)
+    for ring in province:
+        ax.fill([p[0] for p in ring], [p[1] for p in ring], color=LAND, zorder=0)
+    ax.add_collection(LineCollection(districts, colors=DISTRICT, linewidths=0.34, alpha=0.46, zorder=1))
+    for category in ["35", "110", "220", "other_dc", "500plus"]:
+        style = STYLE[category]
+        ax.add_collection(
+            LineCollection(
+                linework.get(category, []),
+                colors=style["color"],
+                linewidths=style["width"],
+                alpha=style["alpha"],
+                zorder=style["z"],
+                capstyle="round",
+                joinstyle="round",
+            )
+        )
+
+    if points:
+        projected = [mercator(lon, lat) for lon, lat in points]
+        for (lon, lat), (x, y) in zip(points, projected):
+            # Web Mercator scale grows by sec(latitude); compensate per point.
+            projected_radius = display_radius_m / math.cos(math.radians(lat))
+            ax.add_patch(
+                Circle(
+                    (x, y),
+                    projected_radius,
+                    facecolor="#F8C7C2",
+                    edgecolor=CORAL,
+                    linewidth=0.38,
+                    alpha=0.30,
+                    zorder=7,
+                )
+            )
+        projected_array = np.asarray(projected)
+        ax.scatter(
+            projected_array[:, 0],
+            projected_array[:, 1],
+            s=13.5,
+            c=CORAL,
+            edgecolors=WHITE,
+            linewidths=0.55,
+            alpha=0.98,
+            zorder=9,
+        )
+
+    ax.add_collection(LineCollection(province, colors=OUTER, linewidths=0.66, alpha=0.92, zorder=10))
+    pad_x = (max_x - min_x) * 0.08
+    pad_y = (max_y - min_y) * 0.05
+    ax.set_xlim(min_x - pad_x, max_x + pad_x)
+    ax.set_ylim(min_y - pad_y, max_y + pad_y)
+    ax.set_aspect("equal", adjustable="box")
+    ax.axis("off")
+
     handles = [
-        Line2D([0], [0], marker="o", color="none", markerfacecolor=CORAL, markeredgecolor=WHITE, markersize=5, label="公开燃放点"),
-        Line2D([0], [0], marker="o", color=CORAL, markerfacecolor=CORAL, alpha=0.17, markersize=9, label="500米缓冲区"),
-        Line2D([0], [0], marker="o", color="none", markerfacecolor=AMBER, markersize=4, label="命中杆塔"),
+        Line2D([0], [0], color=STYLE[key]["color"], lw=max(STYLE[key]["width"] * 2.15, 1.0), alpha=STYLE[key]["alpha"], label=STYLE[key]["label"])
+        for key in ["500plus", "220", "110", "35", "other_dc"]
     ]
-    leg = ax.legend(handles=handles, loc="upper right", bbox_to_anchor=(0.985, 0.99), ncol=1, frameon=True, facecolor=WHITE, edgecolor="#D9DEE4", framealpha=0.96, fancybox=True, fontsize=6.5, columnspacing=1.1, handlelength=1.8, borderpad=0.6)
-    for item in leg.get_texts():
-        item.set_color(MUTED)
-    return save_figure(fig, "集中燃放点缓冲筛查")
+    handles.append(Line2D([0], [0], color=DISTRICT, lw=0.9, alpha=0.72, label="地市界"))
+    handles.extend(
+        [
+            Line2D([0], [0], color="none", lw=0, label="烟花燃放"),
+            Line2D([0], [0], marker="o", color="none", markerfacecolor=CORAL, markeredgecolor=WHITE, markersize=5, label="公开燃放点"),
+            Line2D([0], [0], marker="o", color="none", markerfacecolor="#F8C7C2", markeredgecolor=CORAL, markeredgewidth=0.4, markersize=8, label="影响范围"),
+        ]
+    )
+    legend = ax.legend(
+        handles=handles,
+        loc="upper right",
+        bbox_to_anchor=(0.99, 0.995),
+        frameon=True,
+        facecolor="#FFFFFF",
+        edgecolor="#D7DCE2",
+        framealpha=0.96,
+        fancybox=True,
+        fontsize=8.1,
+        handlelength=2.5,
+        borderpad=0.7,
+        labelspacing=0.55,
+    )
+    for text in legend.get_texts():
+        text.set_color(TEXT)
+        if text.get_text() == "烟花燃放":
+            text.set_weight("semibold")
+
+    outputs = save_figure(fig, "集中燃放点缓冲筛查", tight=True)
+    stats = {
+        **metadata,
+        "screening_radius_m": screening_radius_m,
+        "display_radius_m": display_radius_m,
+        "hit_poles": len(hit_points),
+        "affected_lines": len(hit_lines),
+    }
+    return outputs, stats
 
 
 def main():
@@ -970,7 +1114,9 @@ def main():
     if args.only in {"fireworks", "all"}:
         result = draw_fireworks(network, context, load_fireworks())
         if result:
-            outputs["fireworks"] = [str(p) for p in result]
+            figure_paths, stats = result
+            outputs["fireworks"] = [str(p) for p in figure_paths]
+            outputs["fireworks_stats"] = stats
         else:
             outputs["fireworks"] = "待写入已核验的公开点位数据"
     outputs["total_seconds"] = round(time.perf_counter() - start, 2)
