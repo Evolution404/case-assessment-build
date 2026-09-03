@@ -69,13 +69,36 @@ def assert_no_unapproved_program(name,text):
 for name,text in (('report',report_text),('speaker script',script_text),('deck HTML',slide_text),('deck PDF',pdf_text)):
  assert_no_ai_contrast(name,text)
  assert_no_unapproved_program(name,text)
-for forbidden in ('质量督查','本次质量督查','杆塔台账','9217条线路','2026-02-28','2026-06-29','本人','个疑似相似候选','个候选，并已人工确认','人工投入无法支撑全量计算','1.创新一：','2.双阶段算法：','3.创新二：','4.千万级工程化处理：','点到线段的最短距离','相同或相邻空间单元','计算坐标统一','log(1+n)','而不是简单比较两个清单数量','空间网格索引预筛','0.025°经纬度网格','pHash距离'):
+approved_quality_review_term='运检工作质量远程督查'
+if approved_quality_review_term not in report_text:fail('report missing official proper noun: 运检工作质量远程督查')
+if '督查' in report_text.replace(approved_quality_review_term,''):fail('report contains non-official 督查 wording; use the exact proper noun 运检工作质量远程督查 when referring to the official mechanism')
+for forbidden in ('运检质量监督工作','杆塔台账','9217条线路','2026-02-28','2026-06-29','本人','个疑似相似候选','个候选，并已人工确认','人工投入无法支撑全量计算','1.创新一：','2.双阶段算法：','3.创新二：','4.千万级工程化处理：','点到线段的最短距离','相同或相邻空间单元','计算坐标统一','log(1+n)','而不是简单比较两个清单数量','空间网格索引预筛','0.025°经纬度网格','pHash距离','增效 + 提质','气象节假日','170×210经纬度栅格统计数量','活动区域进入阈值','同图篡改水印日期','裁剪压缩','全电压等级月度千万级巡视照片','正常变化是否能留给人工终审','重复度高','单点提效','2025年年底','把人工和高成本计算','表5已经把','交叉跨越这种单项排查','约5千对','0到1区间','显式保留'):
  if forbidden in report_text:fail(f'report contains obsolete or inaccurate wording: {forbidden}')
 if re.search(r'(?:图|表)\d+\u3000',report_text):fail('report captions still use ideographic-space separator; use normal spaces for stable PDF text extraction')
 if any(v in core_xml for v in ('Administrator','Evolution')):fail('report core metadata still contains template/editor identity')
 if any(name.startswith('word/comments') for name in report_parts):fail('report must not contain reviewer comments in final review artifact')
 if re.search(r'<w:(?:ins|del)(?:\s|>)',rx):fail('report must not contain tracked changes')
-for required in ('40.1万基输电杆塔','9200余条输电线路','全省220kV及以上线路连续三个月','相关核心算法和数字化工具均由我自主设计、开发和验证','此前由电力信息公司提供的既有照片查重能力主要覆盖少量特高压巡视照片','目前能够按月处理约1245万张巡视照片','向其他地市公司推广','传统人工方式难以支撑全量管理','已经成为输电运检专业必须解决的管理问题','面向省域输电运检管理','5,472对疑似相似照片','确认重复348对','约62.18亿对','7.52%','1.告警工单照片查重：从零建立全量筛查方法','2.照片查重：pHash先筛，CLIP再比','4.千万级处理：让1245万张照片稳定跑完','管理层面，把外协管理归纳为“增效管任务、提质管履职”两条主线','方法层面，把空间关系、距离条件和历史照片相似关系转成机器可执行的筛选规则','工程层面，把原有少量特高压照片筛查扩展到全电压等级','两条主线、一个机制','告警工单反馈照片查重和巡视照片查重均已在省公司层面开展试点','照片重复类问题19项','告警工单反馈照片重复11项','人工巡视照片重复8项','真正推动照片查重进入实际管理的，是省公司试点中的一次500千伏特殊通道复核','这一案例成为照片查重进入实际管理的典型节点','进入省公司生产管控中心实际管理通报','接数据、配规则、走闭环','6438个杆塔坐标','249条线路','既有资料中记录了241处铁路跨越结果','照片智能筛查模块只负责把疑似照片对找出来','约77.5万亿对','不依赖新增现场硬件','燃放点—杆塔','ln(1+n)','连续执行7次3×3邻域均值平滑','70%、84%、94%分位点','229,561条有效记录','170×210经纬度栅格','pHash汉明距离＜10且CLIP相似度＞0.80','包围盒预筛','0.0005°','Shapely','三个空间专项可以用“点—线—面”三个空间对象统一理解','三类空间专项的点—线—面对象与筛选逻辑','案例实施成效与管理方式变化','从“大范围找目标”到“拿清单去核验”','从“抽到才发现”到“全量先筛一遍”'):
+if re.search(r'[，。；：！？、]{2,}',report_text):fail('report contains duplicated Chinese punctuation')
+for left,right in (('“','”'),('（','）')):
+ if report_text.count(left)!=report_text.count(right):fail(f'report punctuation pair is unbalanced: {left}{right}')
+W_NS='{http://schemas.openxmlformats.org/wordprocessingml/2006/main}'
+report_paragraphs=[]
+for p in ET.fromstring(rx).iter(W_NS+'p'):
+ text=''.join(p.itertext()).strip()
+ if text:report_paragraphs.append(re.sub(r'\s+',' ',text))
+table_numbers=[int(m.group(1)) for t in report_paragraphs if (m:=re.match(r'^表(\d+)\s',t))]
+figure_numbers=[int(m.group(1)) for t in report_paragraphs if (m:=re.match(r'^图(\d+)\s',t))]
+equation_numbers=[int(m.group(1)) for t in report_paragraphs if (m:=re.search(r'\((\d+)\)$',t))]
+numbered_subheads=[int(m.group(1)) for t in report_paragraphs if (m:=re.match(r'^([1-9])\.(?=[\u4e00-\u9fff])',t))]
+primary_headings=[m.group(1) for t in report_paragraphs if (m:=re.match(r'^([一二三四五])、',t))]
+parenthetical_headings=[m.group(1) for t in report_paragraphs if (m:=re.match(r'^（([一二三四五六七八九十]+)）',t))]
+if primary_headings!=['一','二','三','四','五']:fail(f'report primary heading sequence is wrong: {primary_headings}')
+if parenthetical_headings!=['一','二','三','四','一','二','一','二','一','二','三','四']:fail(f'report parenthetical heading sequence is wrong: {parenthetical_headings}')
+if table_numbers!=list(range(1,11)):fail(f'report table numbering is not sequential 1-10: {table_numbers}')
+if figure_numbers!=list(range(1,11)):fail(f'report figure numbering is not sequential 1-10: {figure_numbers}')
+if equation_numbers!=list(range(1,5)):fail(f'report equation numbering is not sequential 1-4: {equation_numbers}')
+if numbered_subheads!=[1,2,3,1,2,3,4,5,1,2,3,4]:fail(f'report numbered subheading sequence is wrong: {numbered_subheads}')
+for required in ('40.1万基输电杆塔','9200余条输电线路','全省220kV及以上线路连续三个月','相关核心算法和数字化工具均由我自主设计、开发和验证','此前由电力信息公司提供的既有照片查重能力主要覆盖少量特高压巡视照片','目前能够按月处理约1245万张巡视照片','向其他地市公司推广','传统人工方式难以支撑全量管理','已经成为输电运检专业必须解决的管理问题','面向省域输电运检管理','5,472对疑似相似照片','确认重复348对','约62.18亿对','7.52%','1.告警工单照片查重：从零建立全量筛查方法','2.照片查重：pHash先筛，CLIP再比','4.千万级处理：让1245万张照片稳定跑完','管理层面，把外协管理归纳为“增效管任务、提质管履职”两条主线','方法层面，把空间关系、距离条件和历史照片相似关系转成机器可执行的筛选规则','工程层面，把原有少量特高压照片筛查扩展到全电压等级','两条主线、一个机制','告警工单反馈照片查重和巡视照片查重均已在省公司层面开展试点','照片重复类问题19项','告警工单反馈照片重复11项','人工巡视照片重复8项','真正推动照片查重进入实际管理的，是省公司试点中的一次500千伏特殊通道复核','这一案例成为照片查重进入实际管理的典型节点','进入省公司生产管控中心实际管理通报','接数据、配规则、走闭环','6438个杆塔坐标','249条线路','既有资料中记录了241处铁路跨越结果','照片智能筛查模块只负责把疑似照片对找出来','约77.5万亿对','不依赖新增现场硬件','燃放点—杆塔','ln(1+n)','连续执行7次3×3邻域均值平滑','70%、84%、94%分位点','229,561条有效记录','170×210个经纬度栅格','pHash汉明距离＜10且CLIP相似度＞0.80','包围盒预筛','0.0005°','Shapely','三个空间专项可以用“点—线—面”三个空间对象统一理解','三类空间专项的点—线—面对象与筛选逻辑','三类专项分别以点、线、面为分析入口','案例实施成效与管理方式变化','从“大范围找目标”到“拿清单去核验”','从“抽到才发现”到“全量先筛一遍”'):
  if required not in rx:fail(f'report missing required wording: {required}')
 for required_formula_ref in ('式（1）','式（2）','式（3）','式（4）'):
  if required_formula_ref not in report_text:fail(f'report missing sequential equation reference: {required_formula_ref}')
