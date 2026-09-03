@@ -75,7 +75,7 @@ if re.search(r'(?:图|表)\d+\u3000',report_text):fail('report captions still us
 if any(v in core_xml for v in ('Administrator','Evolution')):fail('report core metadata still contains template/editor identity')
 if any(name.startswith('word/comments') for name in report_parts):fail('report must not contain reviewer comments in final review artifact')
 if re.search(r'<w:(?:ins|del)(?:\s|>)',rx):fail('report must not contain tracked changes')
-for required in ('40.1万基输电杆塔','9200余条输电线路','全省220kV及以上线路连续三个月','相关核心算法和数字化工具均由我自主设计、开发和验证','此前由电力信息公司提供的既有照片查重能力主要覆盖少量特高压巡视照片','目前能够按月处理约1245万张巡视照片','向其他地市公司推广','传统人工方式难以支撑全量管理','已经成为输电运检专业必须解决的管理问题','面向省域输电运检管理','5,472对疑似相似照片','确认重复348对','约62.18亿对','7.52%','1.告警工单照片查重：从零建立全量筛查方法','2.照片查重：pHash先筛，CLIP再比','4.千万级处理：让1245万张照片稳定跑完','管理层面，把外协管理归纳为“增效管任务、提质管履职”两条主线','方法层面，把空间关系、距离条件和历史照片相似关系转成机器可执行的筛选规则','工程层面，把原有少量特高压照片筛查扩展到全电压等级','两条主线、一个机制','告警工单反馈照片查重和巡视照片查重均已在省公司层面开展试点','照片重复类问题19项','告警工单反馈照片重复11项','人工巡视照片重复8项','500千伏特殊通道人工巡视照片重复问题被定性为较大运检质量问题','这一案例成为照片查重进入实际管理的典型节点','进入省公司生产管控中心实际管理通报','接数据、配规则、走闭环','6438个杆塔坐标','249条线路','既有资料中记录了241处铁路跨越结果','照片智能筛查模块只负责把疑似照片对找出来','约77.5万亿对','推广时不依赖新增现场硬件','燃放点—杆塔','ln(1+n)','连续执行7次3×3邻域均值平滑','70%、84%、94%分位点','229,561条有效记录','170×210经纬度栅格','pHash汉明距离＜10且CLIP相似度＞0.80','包围盒预筛','0.0005°','Shapely','三个空间专项可以用“点—线—面”三个空间对象统一理解','三类空间专项的点—线—面对象与筛选逻辑'):
+for required in ('40.1万基输电杆塔','9200余条输电线路','全省220kV及以上线路连续三个月','相关核心算法和数字化工具均由我自主设计、开发和验证','此前由电力信息公司提供的既有照片查重能力主要覆盖少量特高压巡视照片','目前能够按月处理约1245万张巡视照片','向其他地市公司推广','传统人工方式难以支撑全量管理','已经成为输电运检专业必须解决的管理问题','面向省域输电运检管理','5,472对疑似相似照片','确认重复348对','约62.18亿对','7.52%','1.告警工单照片查重：从零建立全量筛查方法','2.照片查重：pHash先筛，CLIP再比','4.千万级处理：让1245万张照片稳定跑完','管理层面，把外协管理归纳为“增效管任务、提质管履职”两条主线','方法层面，把空间关系、距离条件和历史照片相似关系转成机器可执行的筛选规则','工程层面，把原有少量特高压照片筛查扩展到全电压等级','两条主线、一个机制','告警工单反馈照片查重和巡视照片查重均已在省公司层面开展试点','照片重复类问题19项','告警工单反馈照片重复11项','人工巡视照片重复8项','真正推动照片查重进入实际管理的，是省公司试点中的一次500千伏特殊通道复核','这一案例成为照片查重进入实际管理的典型节点','进入省公司生产管控中心实际管理通报','接数据、配规则、走闭环','6438个杆塔坐标','249条线路','既有资料中记录了241处铁路跨越结果','照片智能筛查模块只负责把疑似照片对找出来','约77.5万亿对','不依赖新增现场硬件','燃放点—杆塔','ln(1+n)','连续执行7次3×3邻域均值平滑','70%、84%、94%分位点','229,561条有效记录','170×210经纬度栅格','pHash汉明距离＜10且CLIP相似度＞0.80','包围盒预筛','0.0005°','Shapely','三个空间专项可以用“点—线—面”三个空间对象统一理解','三类空间专项的点—线—面对象与筛选逻辑','案例实施成效与管理方式变化','从“大范围找目标”到“拿清单去核验”','从“抽到才发现”到“全量先筛一遍”'):
  if required not in rx:fail(f'report missing required wording: {required}')
 for required_formula_ref in ('式（1）','式（2）','式（3）','式（4）'):
  if required_formula_ref not in report_text:fail(f'report missing sequential equation reference: {required_formula_ref}')
@@ -87,9 +87,9 @@ math_run_count=rx.count('<m:r>');upright_math_count=rx.count('<m:nor')
 if math_run_count==0 or upright_math_count!=math_run_count:fail('all report equation runs must use upright OMML normal-text math style; italic-variable regression detected')
 if 'Smooth7' in report_text:fail('report still exposes the old flattened bird-surface equation notation')
 if rx.count('w:outlineLvl')<20:fail('report headings missing Word outline levels for navigation')
-if len(re.findall(r'<w:tbl(?:\s|>)',rx))!=12:fail('report should contain exactly 12 academic tables after traceability-table consolidation; equation lines must not regress to helper tables')
-if rx.count('w:tblHeader')!=12:fail('every academic table must repeat its header row across page breaks')
-if rx.count('w:cantSplit')<50:fail('academic table rows must prevent row-level page splitting')
+if len(re.findall(r'<w:tbl(?:\s|>)',rx))!=10:fail('report should contain exactly 10 high-value academic tables; low-value engineering tables must not regress into the report')
+if rx.count('w:tblHeader')!=10:fail('every academic table must repeat its header row across page breaks')
+if rx.count('w:cantSplit')<45:fail('academic table rows must prevent row-level page splitting')
 if len(re.findall(r'<w:drawing>',rx))!=10:fail('report should contain exactly 10 approved figures')
 report_page_starts=len(re.findall(r'w:type="page"',rx))+len(re.findall(r'w:pageBreakBefore',rx))
 if report_page_starts!=0:fail('report must use template-style natural pagination without explicit page breaks')
