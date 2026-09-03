@@ -2,7 +2,7 @@
   "title": "从人海作业到数智协同",
   "subtitle": "输电运检外协管理提质增效模式探索与实践",
   "case_id_default": "案例编号：____",
-  "duration_minutes": 15,
+  "duration_minutes": 12,
   "thesis": "增效管任务，提质管履职。增效让外协人员从全量人工排查转向系统筛选、精准核验；提质让外协履职质量从有限人工抽查转向照片全量查重、异常重点复核。",
   "management_logic": {
     "subject": "输电运检外协队伍管理",
@@ -22,6 +22,14 @@
     "province_poles": 400961,
     "province_lines": 9217,
     "province_lines_report_label": "9200余条输电线路",
+    "crossing_poles": 6438,
+    "crossing_lines": 249,
+    "crossing_existing_records": 241,
+    "crossing_people_before": "十余人",
+    "crossing_duration_before": "近两周",
+    "crossing_duration_after": "数分钟",
+    "crossing_additional_findings": "十余处",
+    "fireworks_turnaround": "半小时内",
     "demo_poles_500kv_plus": 42559,
     "demo_lines_500kv_plus": 324,
     "alarm_workorders": 113051,
@@ -54,10 +62,10 @@
     "将既有少量特高压照片筛查能力扩展到全电压等级，实现每月1245万张巡视照片规模化查重。"
   ],
   "technical": {
-    "spatial": ["坐标清洗与线路排序", "包围盒预筛", "精确几何求交", "鸟类活动数据与线路空间叠加", "N米缓冲筛查", "人工复核回写"],
-    "dedup": ["pHash快速召回", "汉明距离筛选", "CLIP语义相似度复核", "双阈值候选生成", "分批处理与结果归并", "人工终审闭环"],
-    "alarm_rule": "pHash < 10 且 CLIP > 0.80",
-    "bird_source": "GBIF occurrence download 0046920-260806074905277 + 公开生态资料"
+    "spatial": ["坐标清洗与线路排序", "空间网格索引预筛", "精确线段求交", "GBIF鸟类发生记录空间叠加", "燃放点—杆塔距离筛查", "人工复核回写"],
+    "dedup": ["pHash快速召回", "汉明距离筛选", "CLIP相似度复核", "双阈值候选生成", "分批处理与结果归并", "人工终审闭环"],
+    "alarm_rule": "pHash汉明距离 < 10 且 CLIP相似度 > 0.80",
+    "bird_source": "GBIF occurrence download 0046920-260806074905277；周边生态环境仅用于业务复核参考"
   },
   "privacy": {
     "allowed_specific_org": "电力信息公司",

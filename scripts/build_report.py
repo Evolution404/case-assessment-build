@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-import json, os
+import json, tempfile
 from pathlib import Path
+from PIL import Image
 from docx import Document
 from docx.shared import Pt, Cm, RGBColor
-from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK, WD_LINE_SPACING
-from docx.enum.section import WD_SECTION
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING, WD_TAB_ALIGNMENT
 from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT, WD_TABLE_ALIGNMENT
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
@@ -14,10 +14,10 @@ TEMPLATE=ROOT.parent/"06 研讨报告模板【研讨报告可参考，根据实�
 OUT=ROOT/"dist/案例考核报告-从人海作业到数智协同.docx"
 CONFIRM_FIG=ROOT/"dist/confirm"
 CFG=json.loads((ROOT/"content/case.json").read_text(encoding="utf-8"))
-CASE_ID=os.environ.get("CASE_ID",CFG["case_id_default"])
 ALARM_SCOPE=CFG["metrics"]["alarm_scope_label"]
 PROVINCE_LINES_LABEL=CFG["metrics"]["province_lines_report_label"]
 FONT="仿宋_GB2312"
+DOCX_MEDIA_DIR=Path(tempfile.gettempdir())/"case-assessment-docx-media"
 
 def wipe_body(doc):
     body=doc._element.body
@@ -31,17 +31,30 @@ def set_run(run,size=14,bold=False,color="000000",font=FONT):
     if rf is None: rf=OxmlElement("w:rFonts");rpr.append(rf)
     for k in ("ascii","hAnsi","eastAsia","cs"):rf.set(qn("w:"+k),font)
 
-def para(doc,text="",size=14,bold=False,align=None,indent=True,before=0,after=0,line=28,color="000000",keep=False):
+def para(doc,text="",size=14,bold=False,align=None,indent=True,before=0,after=0,line=28,color="000000",keep=False,together=False):
     p=doc.add_paragraph();f=p.paragraph_format
     f.line_spacing_rule=WD_LINE_SPACING.EXACTLY;f.line_spacing=Pt(line);f.space_before=Pt(before);f.space_after=Pt(after)
+    f.widow_control=True
     if align is not None:f.alignment=align
     if indent:f.first_line_indent=Pt(size*2)
     if keep:f.keep_with_next=True
+    if together:f.keep_together=True
     set_run(p.add_run(text),size,bold,color)
     return p
 
-def h1(doc,text):return para(doc,text,14,True,indent=True,keep=True)
-def h2(doc,text):return para(doc,text,14,True,indent=True,keep=True)
+def _set_outline_level(p,level):
+    ppr=p._p.get_or_add_pPr();outline=ppr.find(qn("w:outlineLvl"))
+    if outline is None:outline=OxmlElement("w:outlineLvl");ppr.append(outline)
+    outline.set(qn("w:val"),str(level))
+
+def h1(doc,text):
+    p=para(doc,text,14,True,indent=True,keep=True);_set_outline_level(p,0);return p
+
+def h2(doc,text):
+    p=para(doc,text,14,True,indent=True,keep=True)
+    _set_outline_level(p,2 if text[:1].isdigit() else 1)
+    return p
+
 def bullet(doc,text):return para(doc,text,14,False,indent=True)
 
 def report_title(doc,title,subtitle):
@@ -51,6 +64,25 @@ def report_title(doc,title,subtitle):
     set_run(p.add_run("—"),16,False)
     set_run(p.add_run(subtitle),16,False)
     return p
+
+def prepare_docx_image(image_path,width_cm):
+    """Resize + JPEG-compress figures only for DOCX embedding; source figures stay untouched."""
+    DOCX_MEDIA_DIR.mkdir(parents=True,exist_ok=True)
+    target_w=max(900,int(width_cm/2.54*220))
+    out=DOCX_MEDIA_DIR/(image_path.stem+f"-{target_w}px.jpg")
+    src_mtime=image_path.stat().st_mtime_ns
+    stamp=DOCX_MEDIA_DIR/(out.name+".mtime")
+    if out.exists() and stamp.exists() and stamp.read_text()==str(src_mtime):
+        return out
+    with Image.open(image_path) as im:
+        im=im.convert("RGBA")
+        bg=Image.new("RGB",im.size,"white");bg.paste(im,mask=im.getchannel("A"))
+        if bg.width>target_w:
+            target_h=max(1,round(bg.height*target_w/bg.width))
+            bg=bg.resize((target_w,target_h),Image.Resampling.LANCZOS)
+        bg.save(out,"JPEG",quality=90,optimize=True,progressive=True,subsampling=0,dpi=(220,220))
+    stamp.write_text(str(src_mtime))
+    return out
 
 def figure(doc,name,caption,width=15.0):
     confirmed={
@@ -70,45 +102,180 @@ def figure(doc,name,caption,width=15.0):
     image_path=CONFIRM_FIG/confirmed[name]
     if not image_path.exists():
         raise FileNotFoundError(f"缺少确认插图：{image_path}")
-    p=doc.add_paragraph();p.alignment=WD_ALIGN_PARAGRAPH.CENTER;p.paragraph_format.space_before=Pt(5);p.paragraph_format.space_after=Pt(0)
-    shape=p.add_run().add_picture(str(image_path),width=Cm(width))
+    embedded_image=prepare_docx_image(image_path,width)
+    p=doc.add_paragraph();p.alignment=WD_ALIGN_PARAGRAPH.CENTER;p.paragraph_format.space_before=Pt(5);p.paragraph_format.space_after=Pt(0);p.paragraph_format.keep_with_next=True
+    shape=p.add_run().add_picture(str(embedded_image),width=Cm(width))
     shape._inline.docPr.set("title",caption)
     shape._inline.docPr.set("descr",caption)
-    c=doc.add_paragraph();c.alignment=WD_ALIGN_PARAGRAPH.CENTER;c.paragraph_format.space_after=Pt(0)
+    c=doc.add_paragraph();c.alignment=WD_ALIGN_PARAGRAPH.CENTER;c.paragraph_format.space_after=Pt(0);c.paragraph_format.first_line_indent=Pt(0)
     c.paragraph_format.line_spacing_rule=WD_LINE_SPACING.EXACTLY;c.paragraph_format.line_spacing=Pt(24)
-    set_run(c.add_run(caption),12,False,"000000")
+    set_run(c.add_run(caption.replace("\u3000","  ")),12,False,"000000")
 
 def page_break(doc):
     # 模板采用连续研讨报告排版，不主动插入分页符；由 Word 根据正文与图片自然分页。
     return None
 
-def footer(doc):
-    sec=doc.sections[0];p=sec.footer.paragraphs[0];p.alignment=WD_ALIGN_PARAGRAPH.CENTER
-    fld=OxmlElement("w:fldSimple");fld.set(qn("w:instr"),"PAGE");p._p.append(fld)
-    for r in p.runs:set_run(r,10,False,"666666")
+def _set_table_edge(parent,edge,val="single",sz="8"):
+    borders=parent.find(qn("w:tblBorders"))
+    if borders is None:
+        borders=OxmlElement("w:tblBorders");parent.append(borders)
+    node=borders.find(qn("w:"+edge))
+    if node is None:
+        node=OxmlElement("w:"+edge);borders.append(node)
+    node.set(qn("w:val"),val);node.set(qn("w:sz"),sz);node.set(qn("w:space"),"0");node.set(qn("w:color"),"000000")
 
-def add_summary_table(doc):
-    tbl=doc.add_table(rows=3,cols=3);tbl.alignment=WD_TABLE_ALIGNMENT.CENTER;tbl.autofit=False
-    trpr=tbl.rows[0]._tr.get_or_add_trPr();tbl_header=OxmlElement("w:tblHeader");tbl_header.set(qn("w:val"),"true");trpr.append(tbl_header)
-    widths=[Cm(3.4),Cm(5.7),Cm(5.7)]
-    rows=[("外协管理","增效：解决工作量大","提质：解决质量难保证"),("手段","交叉跨越、防鸟、集中燃放点等数字化筛选","告警工单、巡视照片全量查重"),("变化","全量人工排查 → 外协精准核验","有限人工抽查 → 异常重点复核")]
-    for ri,row in enumerate(tbl.rows):
-        for ci,cell in enumerate(row.cells):
-            cell.width=widths[ci];cell.vertical_alignment=WD_CELL_VERTICAL_ALIGNMENT.CENTER
-            cell.text="";p=cell.paragraphs[0];p.alignment=WD_ALIGN_PARAGRAPH.CENTER
-            set_run(p.add_run(rows[ri][ci]),11.5,ri==0 or ci==0,"FFFFFF" if ri==0 else "000000")
-            tcpr=cell._tc.get_or_add_tcPr();shd=OxmlElement("w:shd");shd.set(qn("w:fill"),"27333A" if ri==0 else ("E9E3D9" if ci==0 else "F7F3EC"));tcpr.append(shd)
+def _set_cell_bottom_border(cell,sz="6"):
+    tcpr=cell._tc.get_or_add_tcPr();borders=tcpr.find(qn("w:tcBorders"))
+    if borders is None:
+        borders=OxmlElement("w:tcBorders");tcpr.append(borders)
+    bottom=borders.find(qn("w:bottom"))
+    if bottom is None:
+        bottom=OxmlElement("w:bottom");borders.append(bottom)
+    bottom.set(qn("w:val"),"single");bottom.set(qn("w:sz"),sz);bottom.set(qn("w:space"),"0");bottom.set(qn("w:color"),"000000")
+
+def paper_table(doc,caption,headers,rows,widths=None,note=None):
+    """Formal three-line table for the report: no fill, no vertical rules, compact academic typesetting."""
+    cap=doc.add_paragraph();cap.alignment=WD_ALIGN_PARAGRAPH.CENTER
+    cap.paragraph_format.first_line_indent=Pt(0);cap.paragraph_format.space_before=Pt(6);cap.paragraph_format.space_after=Pt(4)
+    cap.paragraph_format.keep_with_next=True
+    set_run(cap.add_run(caption.replace("\u3000","  ")),11,False,"000000")
+    tbl=doc.add_table(rows=1,cols=len(headers));tbl.alignment=WD_TABLE_ALIGNMENT.CENTER;tbl.autofit=False
+    tblpr=tbl._tbl.tblPr
+    for edge in ("left","right","insideH","insideV"):_set_table_edge(tblpr,edge,"nil","0")
+    _set_table_edge(tblpr,"top","single","12");_set_table_edge(tblpr,"bottom","single","12")
+    if widths is not None:
+        # Fix both tblGrid and cell widths so Word/LibreOffice use the same column geometry.
+        for ci,width in enumerate(widths):
+            tbl.columns[ci].width=Cm(width)
+            tbl._tbl.tblGrid.gridCol_lst[ci].set(qn("w:w"),str(Cm(width).twips))
+        for row in tbl.rows:
+            for ci,cell in enumerate(row.cells):cell.width=Cm(widths[ci])
+    trpr=tbl.rows[0]._tr.get_or_add_trPr();header_repeat=OxmlElement("w:tblHeader");header_repeat.set(qn("w:val"),"true");trpr.append(header_repeat)
+    for ci,text in enumerate(headers):
+        cell=tbl.rows[0].cells[ci];cell.vertical_alignment=WD_CELL_VERTICAL_ALIGNMENT.CENTER
+        if widths is not None:cell.width=Cm(widths[ci])
+        p=cell.paragraphs[0];p.alignment=WD_ALIGN_PARAGRAPH.CENTER;p.paragraph_format.first_line_indent=Pt(0);p.paragraph_format.space_before=Pt(2);p.paragraph_format.space_after=Pt(2)
+        p.paragraph_format.line_spacing_rule=WD_LINE_SPACING.EXACTLY;p.paragraph_format.line_spacing=Pt(18)
+        set_run(p.add_run(text),10.5,True,"000000");_set_cell_bottom_border(cell,"6")
+    for row_values in rows:
+        row=tbl.add_row();row_pr=row._tr.get_or_add_trPr();cant_split=OxmlElement("w:cantSplit");row_pr.append(cant_split)
+        for ci,text in enumerate(row_values):
+            cell=row.cells[ci];cell.vertical_alignment=WD_CELL_VERTICAL_ALIGNMENT.CENTER
+            if widths is not None:cell.width=Cm(widths[ci])
+            p=cell.paragraphs[0];p.alignment=WD_ALIGN_PARAGRAPH.LEFT;p.paragraph_format.first_line_indent=Pt(0);p.paragraph_format.space_before=Pt(1);p.paragraph_format.space_after=Pt(1)
+            p.paragraph_format.line_spacing_rule=WD_LINE_SPACING.EXACTLY;p.paragraph_format.line_spacing=Pt(18)
+            set_run(p.add_run(str(text)),10.5,False,"000000")
+    # These report tables are short; keep their rows as one visual unit whenever a page has room.
+    # Word may still break a table that is taller than the available page, with the repeated header retained.
+    for keep_row in tbl.rows[:-1]:
+        for cell in keep_row.cells:
+            for keep_p in cell.paragraphs:keep_p.paragraph_format.keep_with_next=True
+    if note:
+        # Keep the last data row together with its note so a page never begins with an orphaned table note.
+        for cell in tbl.rows[-1].cells:
+            for last_p in cell.paragraphs:last_p.paragraph_format.keep_with_next=True
+        p=doc.add_paragraph();p.paragraph_format.first_line_indent=Pt(0);p.paragraph_format.space_before=Pt(2);p.paragraph_format.space_after=Pt(5)
+        p.paragraph_format.line_spacing_rule=WD_LINE_SPACING.EXACTLY;p.paragraph_format.line_spacing=Pt(17)
+        set_run(p.add_run("注："+note),9.5,False,"444444")
+    return tbl
+
+def _m_run(text,plain=True):
+    """Create an upright OMML math run for the report's engineering-paper formula style."""
+    run=OxmlElement("m:r")
+    if plain:
+        rpr=OxmlElement("m:rPr")
+        normal=OxmlElement("m:nor")
+        rpr.append(normal)
+        run.append(rpr)
+    # Also force the underlying Word run to upright Cambria Math.  Word honors m:sty='p';
+    # the explicit w:i=0 keeps the same result in alternate DOCX renderers.
+    wrpr=OxmlElement("w:rPr")
+    fonts=OxmlElement("w:rFonts")
+    for key in ("ascii","hAnsi","eastAsia","cs"):fonts.set(qn("w:"+key),"Cambria Math")
+    wrpr.append(fonts)
+    italic=OxmlElement("w:i");italic.set(qn("w:val"),"0");wrpr.append(italic)
+    italic_cs=OxmlElement("w:iCs");italic_cs.set(qn("w:val"),"0");wrpr.append(italic_cs)
+    run.append(wrpr)
+    node=OxmlElement("m:t");node.text=text;run.append(node)
+    return run
+
+def _m_sub(base,sub,base_plain=True):
+    node=OxmlElement("m:sSub");node.append(OxmlElement("m:sSubPr"))
+    expr=OxmlElement("m:e");expr.append(_m_run(base,base_plain));node.append(expr)
+    sub_node=OxmlElement("m:sub");sub_node.append(_m_run(sub));node.append(sub_node)
+    return node
+
+def _m_subsup(base,sub,sup,base_plain=True):
+    node=OxmlElement("m:sSubSup");node.append(OxmlElement("m:sSubSupPr"))
+    expr=OxmlElement("m:e");expr.append(_m_run(base,base_plain));node.append(expr)
+    sub_node=OxmlElement("m:sub");sub_node.append(_m_run(sub));node.append(sub_node)
+    sup_node=OxmlElement("m:sup");sup_node.append(_m_run(sup));node.append(sup_node)
+    return node
+
+def _m_fraction(numerator_nodes,denominator_nodes):
+    node=OxmlElement("m:f");node.append(OxmlElement("m:fPr"))
+    num=OxmlElement("m:num");den=OxmlElement("m:den")
+    for item in numerator_nodes:num.append(item)
+    for item in denominator_nodes:den.append(item)
+    node.append(num);node.append(den)
+    return node
+
+def _m_sum(sub_text,sup_text,body_nodes):
+    node=OxmlElement("m:nary")
+    pr=OxmlElement("m:naryPr");char=OxmlElement("m:chr");char.set(qn("m:val"),"∑")
+    lim=OxmlElement("m:limLoc");lim.set(qn("m:val"),"undOvr");pr.append(char);pr.append(lim);node.append(pr)
+    sub=OxmlElement("m:sub");sub.append(_m_run(sub_text));node.append(sub)
+    sup=OxmlElement("m:sup");sup.append(_m_run(sup_text));node.append(sup)
+    expr=OxmlElement("m:e")
+    for item in body_nodes:expr.append(item)
+    node.append(expr)
+    return node
+
+def _native_equation(kind):
+    math=OxmlElement("m:oMath")
+    if kind=="intersection":
+        for item in (_m_run("P(t) = A + t(B − A),    "),_m_run("Q(u) = C + u(D − C),    "),_m_run("0 ≤ t,u ≤ 1")):math.append(item)
+    elif kind=="bird_surface":
+        math.append(_m_run("S = "))
+        math.append(_m_subsup("M","3×3","7"))
+        math.append(_m_run("["));math.append(_m_run("ln",True));math.append(_m_run("(1 + "))
+        math.append(_m_sub("n","ij"));math.append(_m_run(")]"))
+    elif kind=="hamming":
+        math.append(_m_sub("d","H"));math.append(_m_run("("));math.append(_m_sub("h","1"));math.append(_m_run(","));math.append(_m_sub("h","2"));math.append(_m_run(") = "))
+        body=[_m_run("I",True),_m_run("("),_m_sub("h","1i"),_m_run(" ≠ "),_m_sub("h","2i"),_m_run(")")]
+        math.append(_m_sum("i=1","L",body))
+    elif kind=="combinations":
+        math.append(_m_run("C(N,2) = "))
+        math.append(_m_fraction([_m_run("N(N − 1)")],[_m_run("2")]))
+    else:
+        raise KeyError(f"未知公式类型：{kind}")
+    return math
+
+def paper_equation(doc,kind,number):
+    """Insert an upright, native editable Word OMML equation with a right-aligned equation number."""
+    p=doc.add_paragraph();f=p.paragraph_format
+    f.first_line_indent=Pt(0);f.space_before=Pt(6);f.space_after=Pt(6);f.keep_with_next=True;f.keep_together=True
+    f.line_spacing_rule=WD_LINE_SPACING.EXACTLY;f.line_spacing=Pt(28)
+    tabs=f.tab_stops;tabs.add_tab_stop(Cm(7.30),WD_TAB_ALIGNMENT.CENTER);tabs.add_tab_stop(Cm(14.55),WD_TAB_ALIGNMENT.RIGHT)
+    p.add_run("\t");p._p.append(_native_equation(kind));p.add_run("\t")
+    set_run(p.add_run(f"({number})"),10.5,False,"000000",font="Times New Roman")
+    return p
 
 def build():
     doc=Document(str(TEMPLATE));wipe_body(doc)
+    # 清理模板遗留作者信息，避免正式提交文件暴露无关编辑元数据。
+    doc.core_properties.title=CFG["title"]
+    doc.core_properties.subject=CFG["subtitle"]
+    doc.core_properties.author=""
+    doc.core_properties.last_modified_by=""
+    doc.core_properties.comments=""
     # 保留真实模板自身的 A4 页面设置与页边距：上下 2.54 cm，左右 3.175 cm；不增加页码。
     report_title(doc,CFG["title"],CFG["subtitle"])
     # 按模板结构，标题后直接进入正文，不设置独立封面、摘要、关键词、案例编号或摘要表。
     h1(doc,"一、背景、问题、现状")
     h2(doc,"（一）外协力量已成为输电运检的重要延伸")
-    para(doc,"随着输电线路规模持续扩大、运检任务不断增加，巡视、隐患排查、现场值守、工单处置和台账采集等大量基础工作需要外协力量参与。外协队伍已经成为输电运检专业的重要执行力量，其任务组织效率和履职质量，直接影响专业管理效能和现场工作质量。")
-    para(doc,"从日常工作看，外协任务并不只发生在现场。任务下达前，往往要先整理线路、杆塔、坐标、隐患和外部环境信息，确定哪些区段需要去、哪些点位需要查；任务完成后，还要查看反馈照片、核对工单内容、确认处置结果。前端任务筛选和后端履职核验都需要主业人员投入大量时间，这两部分工作共同决定了外协管理效率。")
-    para(doc,"过去业务量较小时，这套方式依靠熟悉线路的人员还能运转。随着设备范围扩大、专项任务增多，同一批线路和杆塔资料被反复整理，不同人员又按照各自经验判断，管理人员很容易陷入查资料、核台账、看照片等重复工作。现场外协力量增加以后，如果后台任务组织和质量核验仍沿用原来的人工方式，管理端同样会成为瓶颈。")
+    para(doc,"随着输电线路规模持续扩大、运检任务不断增加，巡视、隐患排查、现场值守、工单处置和台账采集等大量基础工作需要外协力量参与。外协队伍已经成为输电运检专业的重要执行力量，其任务组织效率和履职质量，直接影响专业管理效能、现场风险发现和任务闭环质量。随着外协参与范围持续扩大，如何保持任务筛选效率和履职真实性，已经成为输电运检专业必须解决的管理问题。")
+    para(doc,"外协任务下达前要整理线路、杆塔、坐标和外部环境信息，明确去哪查；任务完成后还要核对反馈照片和工单结果。随着设备范围扩大、专项任务增多，同一批资料被反复整理，主业人员大量时间消耗在查资料、核台账、看照片等重复工作，任务组织和质量核验逐渐成为管理瓶颈。")
     h2(doc,"（二）外协管理面临“工作量大、质量难保证”两大痛点")
     bullet(doc,"工作量大：一项专项排查任务往往需要从多类台账和海量设备中重新寻找目标。以交叉跨越、防鸟、集中燃放点等工作为例，需要反复关联线路、杆塔、坐标和外部信息，再由外协人员逐项查找、现场摸排。任务对象越多、范围越大，人员投入几乎同步增加，大量精力消耗在重复查询和全量排查上。")
     bullet(doc,f"质量难保证：外协履职涉及大量工单、现场反馈和长期积累的历史数据。仅{ALARM_SCOPE}的告警工单数量就超过11万条，同时还沉淀了大量现场反馈照片和历史处置记录。面对数量庞大、时间跨度长、跨工单分散存储的作业数据，管理人员很难依靠人工逐一核验，更难在历史数据中发现同一照片跨时间、跨工单重复使用等异常情况，传统抽查方式难以全面判断外协工作是否真实、规范、到位。")
@@ -118,10 +285,10 @@ def build():
     # 4 现状量级
     h2(doc,"（三）数据规模决定了“人海作业”不可持续")
     para(doc,f"目前全省约有{CFG['metrics']['province_poles']/10000:.1f}万基输电杆塔、{PROVINCE_LINES_LABEL}。围绕日常运维和专项治理，需要按照不同业务口径持续统计、更新各类台账，例如交叉跨越、防鸟、集中燃放点等，往往都要重新关联线路、杆塔、坐标及外部数据。传统方式主要依靠人工整理、逐项核对，既耗费大量人力，同一基础数据又在不同专项中反复处理，设备规模越大，重复工作越突出。")
-    para(doc,"这类排查通常包含多轮人工操作。先要确认线路名称和杆号顺序，再检查坐标是否缺失、重复或偏离；随后把外部目标与线路位置逐一对应，发现疑似点位后还要回到原始资料核对。交叉跨越需要查铁路、公路等地理要素，防鸟要叠加鸟类活动和生态环境信息，集中燃放点又需要按距离筛选周边杆塔。业务规则不同，但前面的数据整理工作高度重复。")
-    para(doc,f"业务过程数据同样持续增长。{ALARM_SCOPE}共形成{CFG['metrics']['alarm_workorders']:,}条告警工单、{CFG['metrics']['alarm_photos']:,}张现场反馈照片；巡视照片每月约{CFG['metrics']['patrol_photos_monthly']/10000:.0f}万张。数据跨线路、跨任务、跨时间积累，人工不仅难以逐一核验，更难与历史记录进行全量比对。以月度{CFG['metrics']['patrol_photos_monthly']/10000:.0f}万张巡视照片为例，若采用简单两两比较，理论组合约77.5万亿，依靠人工或简单穷举均无法支撑。")
+    para(doc,"专项排查通常先确认线路和杆号顺序、检查坐标质量，再把外部目标与线路位置对应。交叉跨越、防鸟、集中燃放点的判断规则不同，但线路、杆塔和坐标整理步骤高度重复。")
+    para(doc,f"业务过程数据同样持续增长。{ALARM_SCOPE}共形成{CFG['metrics']['alarm_workorders']:,}条告警工单、{CFG['metrics']['alarm_photos']:,}张现场反馈照片；巡视照片每月约{CFG['metrics']['patrol_photos_monthly']/10000:.0f}万张。数据跨线路、跨任务、跨时间积累，人工不仅难以逐一核验，更难与历史记录进行全量比对。以月度{CFG['metrics']['patrol_photos_monthly']/10000:.0f}万张巡视照片为例，若采用简单两两比较，理论组合约77.5万亿对，依靠人工或简单穷举均无法支撑。")
     figure(doc,"province-map","图2　省域线路杆塔任务规模与电压等级分布",12.8)
-    para(doc,"40.1万基杆塔、9200余条线路以及持续增长的千万级业务照片，使传统“增加人员、提高频次”的管理方式逐渐触及能力上限。继续增加人手只能有限提高处理量，需要建立一种不受人工规模直接约束的处理方式。")
+    para(doc,"40.1万基杆塔、9200余条线路以及持续增长的千万级业务照片，使传统“增加人员、提高频次”的管理方式逐渐触及能力上限。继续增加人手只能有限提高处理量。面向省域输电运检管理，任务筛选和履职监督需要具备批量处理、统一规则和可追溯复核能力，这也是本案例选择外协管理作为切入点的现实原因。")
     page_break(doc)
     # 5 根因
     h2(doc,"（四）根因分析：传统人工方式难以支撑全量管理")
@@ -141,13 +308,31 @@ def build():
     h2(doc,"（二）外协数智管理的共用闭环")
     para(doc,"在双线模式基础上，本案例把计算结果直接接入任务组织、现场执行和主业复核流程。多源数据汇集后，系统按业务规则筛出重点任务并生成清单，外协人员按清单执行，主业复核结果再回写数据和规则，用于后续任务调整。")
     figure(doc,"workflow","图4　外协任务数字化筛选与闭环管理流程",15.2)
-    bullet(doc,"多源数据汇集：统一交叉跨越、鸟类活动、燃放点、气象节假日和杆塔线路底账。")
+    bullet(doc,"多源数据汇集：统一汇集交叉跨越、鸟类发生记录、燃放点、气象节假日以及线路、杆塔基础数据。")
     bullet(doc,"空间叠加与规则筛查：把安全距离、风险等级等业务要求转成可计算条件。")
     bullet(doc,"重点任务自动识别：生成高风险、高影响点位清单，减少全量人工排查。")
     bullet(doc,"外协定向巡视：任务和路线精准推送，现场执行并上传反馈。")
     bullet(doc,"主业复核与闭环：确认结果、处置问题并持续优化规则。")
-    para(doc,"这套流程对人和程序的职责作了明确区分。程序负责处理数量大、重复性强、规则相对明确的工作，例如空间求交、距离筛选、相似照片召回；外协人员负责现场核验和任务执行；主业人员负责风险判断、结果确认和问题处置。程序输出只作为任务线索和复核入口，不直接替代专业结论。")
-    para(doc,"实际使用中，数据质量和规则口径同样重要。杆塔位置变化、线路改造、外部环境更新后，基础数据需要同步更新；现场核验发现规则过宽或过窄时，也要调整筛选条件。这样，前一次任务留下的数据和复核结果可以直接服务下一次任务，减少重复整理。")
+    para(doc,"从实践结果看，本案例的创新主要集中在三个层面。管理层面，把外协管理归纳为“增效管任务、提质管履职”两条主线；方法层面，把空间关系、距离条件和历史照片相似关系转成程序可执行的筛选规则；工程层面，把原有少量特高压照片筛查扩展到全电压等级，支撑每月1245万张巡视照片持续处理。三者共同服务同一目标：程序先处理全量数据，人员集中完成专业核验。")
+    para(doc,"程序负责空间求交、距离筛选和相似照片召回，外协人员负责现场执行，主业人员负责风险判断和结果确认。程序输出只作为任务线索和复核入口。线路改造、环境变化或现场核验发现规则偏差时，再同步更新基础数据和筛选条件。")
+    para(doc,"从技术实现看，这套方法采用分层处理结构。原始业务数据先经过标准化和质量检查，进入统一数据层；随后由规则层把业务判断转成空间关系、距离阈值和图像相似度条件；计算层承担批量求交、距离检索、视觉特征提取和候选召回；输出层只生成需要关注的任务对象或疑似照片对，最后由人工复核并把结果回写。各层输入和输出保持相对稳定，便于在不同专项之间复用。")
+    paper_table(doc,"表1　外协数智管理技术架构及输入输出",("层级","主要输入","核心处理","主要输出"),(
+        ("数据层","线路、杆塔、坐标、外部地理要素、工单、照片","字段统一、格式转换、完整性检查","可计算的标准数据"),
+        ("规则层","业务制度、距离要求、现场经验、复核样本","求交条件、区域条件、距离阈值、相似度阈值","机器可执行规则"),
+        ("计算层","标准数据、规则参数","空间计算、特征计算、候选召回、批次调度","候选点位、区段、照片对"),
+        ("业务层","计算候选、关联任务信息","任务派发、现场核验、人工终审","业务确认结果"),
+        ("回写层","现场结论、复核结论、异常样本","状态更新、样本留存、规则校准","下一轮数据与参数"),
+    ),widths=(2.2,4.0,4.5,3.4),note="表中“输出”均为后续业务处理的输入，算法结果不直接替代现场核验和管理定性。")
+    para(doc,"分层结构还解决了技术与业务之间的接口问题。例如，交叉跨越和集中燃放点虽然使用不同规则，但都可以调用同一套线路空间数据；告警工单和巡视照片虽然来源不同，也可以共用照片标准化、特征计算和候选复核框架。后续增加新专项时，优先复用已有数据处理和计算模块，只针对业务差异增加规则配置。")
+    para(doc,"为了避免不同专项各自维护一套数据，本案例把业务对象按“实体—关系—状态”组织。线路、杆塔、外部点位、工单和照片属于实体；线路与杆塔、工单与照片、候选照片A与B之间属于关系；是否待核验、是否确认重复、是否已闭环属于状态。程序处理时尽量使用稳定标识关联对象，展示给人员时再恢复线路名称、杆号和业务描述。这样可以降低名称变更、表格列顺序变化对计算链的影响。")
+    para(doc,"数据接口设计同时保留原始值和标准化值。例如坐标字段保留原始来源，计算层使用统一格式后的数值；照片记录保留原文件关联，特征层单独保存计算结果。出现异常时既可以看到程序使用了什么数据，也可以回到原始记录核对，避免标准化过程中丢失追溯依据。")
+    paper_table(doc,"表2　核心数据对象及关联关系",("对象","稳定关联信息","主要关系","典型状态"),(
+        ("线路","线路标识、电压等级","包含多个杆塔和线路段","在运、调整、待核对"),
+        ("杆塔","线路标识、杆号（设备标识）","相邻杆塔组成线路段","坐标正常、异常、待复核"),
+        ("外部目标","来源标识、几何对象标识","与线路段或杆塔形成空间关系","候选、已核验、已排除"),
+        ("工单","工单标识、任务对象","关联一组反馈照片","已完成、待复核、问题闭环"),
+        ("照片","照片标识、来源任务","关联特征、候选照片对","正常、候选、已确认"),
+    ),widths=(2.2,4.1,4.5,3.6),note="表中强调的是关联原则，具体字段名称随数据源调整；原始值与标准化值均保留追溯关系。")
     page_break(doc)
     # 8 efficiency overview
     h1(doc,"三、具体做法")
@@ -157,61 +342,118 @@ def build():
     para(doc,"二是把业务经验转化为可计算规则。在统一数据底座基础上，将“是否相交”“是否进入重点活动区域”“是否落入安全距离”等业务判断转化为空间叠加、风险分级和距离阈值，并编写对应计算逻辑，把个人经验固化为可重复执行的程序规则，批量生成重点核验清单。")
     para(doc,"三是以任务清单组织外协精准核验。候选点位和区段按风险、区域和任务类型整理为清单，定向推送给外协人员并规划巡视路线。外协上传现场结果，主业复核后回写状态，形成“自动筛选—定向执行—反馈复核—规则优化”的闭环。")
     para(doc,"完成线路、杆塔和外部数据整理后，不同专项可以直接调用同一套基础数据和计算规则。外协人员根据程序生成的清单开展现场核验，省去了从全量设备中逐项查找的过程。")
+    para(doc,"数据治理是空间计算能够稳定运行的前提。杆塔坐标需要同时满足数值有效、位置合理、线路归属明确和杆号顺序可恢复等条件；外部地理数据则要统一空间参考、几何类型和必要属性。对无法自动判定的异常数据，程序保留原始记录和异常原因，单独进入人工复核，避免异常值直接参与批量计算。")
+    paper_table(doc,"表3　空间任务数据预处理与质量控制",("对象","主要质量问题","程序处理","业务控制"),(
+        ("杆塔坐标","缺失、重复、明显离群","完整性校验、重复检测、范围检查","异常记录单独复核"),
+        ("线路顺序","杆号缺失、排序错误、跨线路混入","按线路分组并恢复相邻关系","核对线路拓扑与杆号"),
+        ("外部线要素","铁路、公路分段过长、属性不统一","几何拆分、属性标准化、范围过滤","保留可追溯来源"),
+        ("外部点要素","坐标格式差异、重复点位","坐标统一、去重、范围预筛","核对任务清单来源"),
+        ("输出结果","一对象命中多个规则或多个外部目标","候选归并、关联关系保留","现场核验后确认状态"),
+    ),widths=(2.3,4.0,4.2,3.6),note="质量控制优先保证漏项可追溯、异常可复核，避免在数据清洗阶段静默丢弃业务对象。")
+    para(doc,"为保证计算结果能够复盘，每条候选还需要保存来源数据、所用规则和关联对象。这样，当现场核验发现误差时，可以判断问题来自原始坐标、业务阈值还是外部数据，并针对原因修正，避免只在最终结果表中人工改数。")
+    para(doc,"坐标处理遵循“原始经纬度保留、计算口径明确”的原则。线段求交要求输电线路与外部线状要素处于同一坐标参考；涉及米制距离的业务判断则采用距离换算或投影坐标，避免把经纬度差值直接当作线性距离。输出候选时继续保留原始坐标和业务对象标识，使计算过程与业务台账能够相互对应。")
+    para(doc,"线路拓扑构造时，以同一线路内相邻杆塔为基本计算单元。一条线路有n基有效杆塔时，正常情况下形成n-1条相邻线段；如果杆号存在跳号或坐标异常，程序先记录异常，再决定是否连接。采用档段作为最小单元有两个好处：一是可以把交点、鸟类重点区段等结果精确映射到相邻杆塔之间；二是局部数据修正只影响对应档段，不需要重建整条线路的业务结果。")
+    para(doc,"候选结果去重时不能只按坐标取整。多个外部对象可能在相近位置与同一线路相交，或者同一杆塔可能落入多个燃放点影响范围。程序因此同时保留业务对象标识和空间关系，先合并完全重复的计算记录，再保留一对多、多对一等真实业务关系，防止为了表格简洁误删需要现场核验的信息。")
     page_break(doc)
     # 9 crossing
-    h2(doc,"1.交叉跨越：包围盒预筛与精确几何求交")
-    para(doc,"交叉跨越排查是这套数字化方法最早落地的业务场景。面对需要人员逐条线路、逐个区段查找的重要跨越信息，我利用既有全量杆塔坐标自主编写程序，将相邻杆塔连接形成线路空间模型，引入铁路、公路等地理要素，并设计“包围盒预筛＋精确几何求交”的批量计算方法，先快速排除明显无关对象，再对剩余对象进行精确求交。")
+    h2(doc,"1.交叉跨越：把逐线排查变成自动求交")
+    para(doc,"交叉跨越排查是这套数字化方法最早落地的业务场景。面对需要人员逐条线路、逐个区段查找的重要跨越信息，我利用既有全量杆塔坐标自主编写程序，将相邻杆塔连接形成线路空间模型，引入铁路、公路等地理要素，并采用“空间网格索引预筛＋精确线段求交”的批量计算方法，先缩小需要参与精确计算的线段组合，再判断是否真正相交。")
     para(doc,"早期一次实际数据整理中，纳入计算的基础数据包含6438个杆塔坐标、249条线路，既有资料中记录了241处铁路跨越结果。人工排查时，需要先按线路逐段查看，再把地图上的铁路、公路位置与杆塔区段对应起来。线路数量一多，单纯依赖翻表和地图浏览很容易出现重复查看，也容易遗漏位置不明显的跨越点。")
-    para(doc,"程序开发过程中，首先解决的是线路如何正确连接。杆塔坐标只有点，必须根据线路和杆号顺序连接成线段；遇到缺失坐标、重复点和明显离群点时，需要先标记并排除。随后再处理外部地理要素，把线路段与铁路、公路放到统一坐标体系中。为了减少无效计算，先用包围盒判断两条线段是否可能接近，只有可能相交的组合才进入精确几何求交。")
+    para(doc,"计算前先按线路和杆号顺序把杆塔坐标连接成线段，标记缺失坐标、重复点和明显离群点，再将线路与铁路、公路统一到同一坐标体系。离散杆塔点只有恢复成连续线路段后，程序才能判断一档导线走廊与外部线状目标之间的空间关系；如果杆号顺序错误，连接出的线段也会偏离真实线路，因此拓扑检查直接影响后续求交可靠性。")
+    para(doc,"批量求交采用“索引预筛—精确求交”两级结构。当前实现以0.025°经纬度网格建立空间索引：外部线段先按自身经纬度最小—最大范围登记到覆盖网格，输电线路段再查询自身覆盖网格内的外部线段作为候选。只有这些候选进入参数方程求交，根据t、u是否同时落在0到1区间内判断两条有限线段是否真正相交；对近似平行、端点接触和浮点误差等情况设置数值容差。")
+    paper_equation(doc,"intersection","1")
+    para(doc,"式（1）把两条线段分别写成参数形式，其中A、B为输电线路段两个端点，C、D为外部线状要素对应线段的两个端点，t、u为各自线段参数。程序求解P(t)=Q(u)；当t、u均落在0到1区间内时，交点位于两条有限线段上。对近似平行、端点接触和浮点误差等边界情形单独设置数值容差。",together=True)
+    para(doc,"空间索引的作用是控制候选规模。相距较远、覆盖网格没有交集的线段不会进入精确求交；同一外部线段跨越多个网格时，候选集合先按线段索引去重，再执行一次精确判断。这样既减少重复计算，也避免网格切分造成同一线段被多次计数。")
+    para(doc,"最终结果保留“输电线路段—外部要素—交点坐标—候选类型”的关联关系。这样现场核验发现某一候选有误时，可以追溯到具体外部要素和原始线路段；同一档线路同时与多条外部线状目标相交时，也不会因为简单去重而丢失业务关系。")
     figure(doc,"crossing","图5　交叉跨越自动筛查及候选分布",15.2)
-    para(doc,"在某地市实际应用中，原需十余人、近两周完成的全量排查，程序数分钟即可完成，同时还补充识别出十余处此前人工排查遗漏的铁路、公路等重要跨越信息。")
-    para(doc,"程序输出后先生成候选清单，由熟悉线路的人员结合图形位置和现场情况复核，确认后的点位再进入正式管理。这个过程也暴露出一批基础数据问题，例如杆号顺序异常、坐标偏移和外部地图要素名称不统一。把这些问题修正以后，同一套线路空间数据能够继续用于后面的防鸟和燃放点筛选。")
+    para(doc,"在某地市实际应用中，原需十余人、近两周完成的全量排查，程序数分钟即可完成，同时还补充识别出十余处此前人工排查遗漏的铁路、公路等重要跨越信息。这次排查也让我确认，线路空间数据一旦整理好，后续专项可以直接复用，不必每次重新从台账和地图开始查找。")
+    para(doc,"程序输出后先生成候选清单，由熟悉线路的人员结合图形位置和现场情况复核，确认后的点位再进入正式管理。复核过程中发现的杆号顺序异常、坐标偏移和外部地图要素名称不统一等问题同步修正，为后续防鸟和燃放点筛选提供了更可靠的线路空间数据。")
+    para(doc,"算法校核采用“既有结果对照＋新增候选复核”的方式。既有资料中的241处铁路跨越可以作为已知样本，用于检查程序是否能够覆盖已经掌握的跨越关系；程序新增的候选再由人员逐项查看线路段、铁路位置和现场资料，确认是原资料漏项、外部数据差异还是计算误差。校核重点放在原因定位，不以两个清单数量的简单比较作为结论。")
+    para(doc,"边界样本需要单独检查。两条线段在端点处接触时，参数值接近0或1；近似平行线段会使方程分母很小；一条外部线跨越多个空间网格时，同一线段可能被多个索引单元召回。程序通过数值容差、候选去重和稳定对象标识处理这些情况，并在结果中保留原始关联，避免边界样本被重复计数或静默丢失。")
+    para(doc,"新增十余处此前人工遗漏的重要跨越后，我又反向检查这些点为什么容易被人工漏掉。常见原因包括线路范围较大、跨越位置不明显、外部要素名称不统一以及需要在多份资料之间切换。统一规则可以对全量线段执行一致的判断条件，降低因人工切换资料和逐段浏览造成的漏项风险，人员随后集中完成少量候选的业务确认。")
     page_break(doc)
     # 10 bird
-    h2(doc,"2.防鸟：公开生态资料与线路空间叠加")
-    para(doc,"交叉跨越程序完成后，我又把同样的空间计算方法用到防鸟排查中。通过引入GBIF鸟类活动数据并结合公开生态资料，对鸟类活动记录进行空间汇总，再与输电线路叠加，筛出活动较集中以及湿地、水网、迁徙廊道等区域内需要重点核验的线路区段，为防鸟装置排查和差异化巡视生成任务清单。")
+    h2(doc,"2.防鸟：用空间叠加收敛重点区段")
+    para(doc,"交叉跨越程序完成后，我又把同样的空间计算方法用到防鸟排查中。程序引入全球生物多样性信息机构（Global Biodiversity Information Facility，GBIF）公开鸟类发生记录，对省域内有效记录进行空间汇总并与输电线路叠加，先筛出鸟类活动相对集中的线路区段；任务复核时再参考湿地、水网等周边生态环境，形成防鸟装置排查和差异化巡视清单。")
     figure(doc,"bird","图6　鸟类活动重点区域与输电线路空间叠加筛查",12.8)
+    para(doc,"注：鸟类活动表面使用GBIF.org公开鸟类发生记录计算，线路数据复用报告正式省域线路底图；湿地、水网等环境信息用于任务复核参考，现场风险以实地核验结果为准。",9.5,False,indent=False,line=17,color="444444")
     para(doc,"鸟类活动数据与输电线路叠加后，可以先筛出鸟类活动相对集中的线路区段，再安排外协人员现场核验。这样不需要沿线大范围摸排，防鸟装置排查和差异化巡视的任务范围也更明确。")
-    para(doc,"鸟类数据本身具有采集时间、地点分布不均等特点，因此程序只用于缩小排查范围，不把公开记录直接等同于现场风险。实际筛选时，还要结合湿地、水网、迁徙廊道等环境信息综合判断，再把候选区段交给现场核验。现场发现的鸟巢、防鸟装置状态和周边环境情况可以反过来修正后续任务范围。")
-    para(doc,"这一场景的重要意义在于验证了线路空间数据的通用性。交叉跨越关注线路与铁路、公路是否相交，防鸟关注线路是否位于鸟类活动相对集中的区域，两项工作的业务规则完全不同，但底层都依赖线路位置和空间关系计算，因此不需要重新整理一套线路基础数据。")
+    para(doc,"鸟类发生记录存在采集时间和地点分布不均等特点，程序输出只用于缩小排查范围。业务复核时可结合湿地、水网等环境信息，现场再核验鸟巢、防鸟装置状态和周边环境。交叉跨越与防鸟虽然判断规则不同，但都复用同一套线路位置数据和空间计算方法。")
+    para(doc,"GBIF原始数据处理采用“坐标有效性检查—省域边界过滤—空间栅格统计—活动强度平滑—重点等级划分”的流程。本次数据共扫描229,927条发生记录，经省界多边形过滤后保留229,561条有效记录，随后落入170×210经纬度栅格统计数量。为降低少量记录极密集区域对整体分级的影响，对网格计数采用ln(1+n)变换后进行邻域平滑。")
+    para(doc,"活动等级采用样本分布的分位数划分。对平滑后大于0的有效栅格，程序分别取70%、84%、94%分位点作为活动区域进入阈值、较活跃分界和高活跃分界，再将活动表面转换到与线路一致的平面坐标进行叠加。分位数规则能够随当前输入记录的空间分布变化，避免长期固定一个记录数量阈值。最终线路筛选仍保留现场核验，GBIF发生记录只负责把大范围线路收敛到更值得关注的区段。")
+    paper_equation(doc,"bird_surface","2")
+    para(doc,"式（2）表示鸟类活动表面的处理过程，其中nᵢⱼ为第i行、第j列栅格内的有效记录数量，ln(1+nᵢⱼ)用于压缩极高记录密度造成的数量级差异；M₃×₃表示一次3×3邻域均值平滑，上标7表示重复应用该算子，即连续执行7次3×3邻域均值平滑。平滑后的有效栅格再按样本分位数划分活动等级，降低少量记录极密集区域对全省分级结果的过度影响。该活动表面只用于空间筛选，不作为鸟害概率或设备故障概率。",together=True)
+    para(doc,"线路与活动表面叠加时，以线路段位置读取对应活动等级，达到重点条件的区段进入候选集合；同一线路可能有多个区段连续命中，输出时再按线路和相邻区段归并，形成便于外协执行的核验范围。现场反馈若显示某些区域长期没有鸟类活动或防鸟设施状态稳定，可作为后续规则调整的业务依据。")
     page_break(doc)
     # 11 fireworks
-    h2(doc,"3.集中燃放点：影响范围分析与周边杆塔批量筛查")
+    h2(doc,"3.集中燃放点：复用空间底座快速出清单")
     para(doc,"2025年年底接到集中燃放点周边输电杆塔排查任务后，我直接复用前期形成的线路空间数据和距离计算方法，只调整距离参数和筛选规则，算上修改调试不到半小时即完成批量计算和清单输出。")
+    para(doc,"这一场景的核心计算是“燃放点—杆塔”的批量距离关系。每个燃放点作为外部点目标进入统一空间计算流程，业务距离作为可配置参数；程序先用经纬度范围做低成本预筛，再计算燃放点与杆塔之间的实际距离。命中杆塔同时保留所属线路标识，由杆塔结果汇总出涉及线路，避免后续人员再从地图位置反查设备。")
+    para(doc,"多个燃放点同时计算时，一基杆塔可能命中多个点位，同一线路也可能有多基杆塔进入影响范围。程序先保留全部命中关系，再按杆塔和线路归并形成核验清单，并保留对应燃放点来源。这样既能控制清单重复，又不会丢失“一基杆塔对应多个外部风险源”的信息。")
+    para(doc,"距离参数与计算主体分离后，新任务只需调整业务参数即可复用。参数改变会重新生成候选范围，杆塔坐标清洗、低成本范围预筛、结果归并和现场核验字段都可以沿用前期模块，这也是该任务能够在较短时间内完成修改调试和清单输出的技术原因。")
     figure(doc,"fireworks","图7　集中燃放点影响范围与周边杆塔筛查",12.8)
     para(doc,"程序一次计算即可给出集中燃放点周边需要核验的杆塔和线路清单，外协人员按清单到现场确认，不再逐个燃放点、逐基杆塔查询判断。交叉跨越、防鸟和集中燃放点虽然业务对象不同，但实际都采用“程序先筛、人员核验”的办法。")
+    para(doc,"三个空间专项在计算结构上可以归纳为线—线、区—线和点—距三类关系。交叉跨越关注两类线状目标是否相交；防鸟先把GBIF鸟类发生记录聚合为活动重点区域，再判断线路与重点区域的空间关系，并在业务复核时参考周边生态环境；集中燃放点则以点位为中心，根据业务距离筛选周边杆塔并汇总涉及线路。规则变化集中在空间关系和阈值，线路底座、坐标检查、结果归并与现场核验流程保持一致。")
+    paper_table(doc,"表4　三类空间专项的计算规则与复用关系",("专项","空间关系","机器侧核心计算","人员侧核验重点"),(
+        ("交叉跨越","线 × 线","空间网格索引预筛、精确线段求交","跨越类型、现场位置、管理属性"),
+        ("防鸟","区 × 线","鸟类活动空间聚合、重点区域识别、线路叠加","鸟巢、防鸟装置、周边生态环境"),
+        ("集中燃放点","点 × 距","影响距离配置、批量距离判断、重复候选归并","点位有效性、设备实际受影响情况"),
+    ),widths=(2.5,2.7,5.0,4.1),note="三类专项共用线路与杆塔空间底座，业务差异主要由规则和阈值体现。")
     page_break(doc)
     # 12 quality problem
     h2(doc,"（二）提质：照片查重强化外协履职质量监督")
     para(doc,f"任务筛选解决的是“去哪查”，照片查重解决的是“是否真正查到位”。外协人员完成任务后要上传反馈照片，过去主要靠管理人员抽查。面对十万级乃至千万级历史照片，人工很难记住既往画面，也无法逐一比对。{ALARM_SCOPE}共形成{CFG['metrics']['alarm_workorders']:,}条告警工单和{CFG['metrics']['alarm_photos']:,}张现场反馈照片，这已经超出人工逐张核验的处理能力。")
     figure(doc,"photo-scale","图8　告警工单照片全量筛选与人工复核结果",15.2)
     para(doc,f"系统对{CFG['metrics']['alarm_photos']:,}张现场反馈照片进行全量筛选，形成{CFG['metrics']['alarm_candidates']:,}对疑似相似照片，其中{CFG['metrics']['alarm_reviewed']:,}对已完成人工复核，确认重复{CFG['metrics']['alarm_confirmed_pairs']:,}对、确认不同{CFG['metrics']['alarm_confirmed_different']:,}对，另有{CFG['metrics']['alarm_pending']:,}对待复核。管理人员不再需要在11万余张照片中逐张查找，只需重点查看约5千对候选。目前，告警工单反馈照片查重和巡视照片查重均已在省公司层面开展试点，并用于生产管控中心运检工作质量远程督查。")
-    para(doc,"实际筛查中，重复照片的表现形式并不完全相同。有的是相邻日期直接上传同一张照片，有的是不同工单之间重复使用，还有的会修改水印时间、裁剪边缘或调整颜色后再次提交。同时也存在看起来很像、但现场确实发生变化的照片，例如车辆位置、吊臂姿态或作业对象发生了变化。正因为存在这些情况，程序只负责把疑似照片对找出来，人工复核环节不能省略。")
-    para(doc,"复核时需要同时查看两张原图、拍摄时间、所属线路、工单对象和现场细节。对告警工单，还要确认反馈照片是否能够真实反映当次隐患核实和处置情况；对巡视照片，则要判断照片是否对应当次巡视区段和时间。只有完成这些业务核对后，才能认定是否属于重复使用。")
+    para(doc,"重复照片既有直接复用，也有修改水印、裁剪或调色后再次提交；同时还存在画面相似但车辆位置、吊臂姿态确有变化的正常照片。程序只负责把疑似照片对找出来，复核人员再查看两张原图、拍摄时间、线路、工单对象和现场细节，确认照片是否真实对应当次任务。")
     page_break(doc)
     # 13 innovation 1
-    h2(doc,"1.从无到有建立告警工单照片查重")
+    h2(doc,"1.告警工单照片查重：从零建立全量筛查方法")
     para(doc,"当时告警工单反馈照片没有可直接使用的全量查重手段。我先确定什么样的照片应进入疑似重复候选，再编写查重程序，设计机器筛选、原图对照和人工终审流程，并用真实业务样本反复校准参数。由此建立了告警工单照片全量查重方法。")
     figure(doc,"photo-cases","图9　真实复核案例：同图篡改水印日期与高相似但不同照片",12.2)
-    para(doc,"图9上部三张照片主体、构图和现场细节一致，但水印日期分别显示为06-27、06-10和05-30，人工复核后确认属于同图修改水印日期后重复使用；下部两张照片虽然相似度达到97.63%，但车辆位置、吊臂姿态和现场物体存在真实变化，人工确认并非重复。全量查重把这些原本依靠人工记忆才能发现的问题先筛出来，再交给管理人员结合工单和现场情况判断。省公司实际督查中，还发现某500千伏特殊通道区段两次人工巡视使用重复照片，相关问题被认定为人工巡视不到位，并定性为较大运检质量问题。")
-    para(doc,"这项特殊通道问题具有较强代表性。特殊通道本身需要更高频次、更可靠的巡视记录，照片重复意味着系统里虽然留下了两次巡视记录，但其中至少一次记录不能真实反映当时通道情况。照片查重把两次相隔时间的记录自动关联起来，管理人员再结合巡视任务和线路区段确认问题，使原先依赖抽查和记忆发现的异常具备了稳定的筛查入口。")
-    para(doc,"省公司试点以后，查重结果已经进入日常管理流程。累计形成通报的19项照片重复类问题中，11项来自告警工单反馈照片，8项来自人工巡视照片。问题来源覆盖不同任务类型，说明照片复用并非单一场景现象，也说明把历史照片放在同一套筛查规则下比较具有实际管理价值。")
+    para(doc,"图9上部三张照片主体、构图和现场细节一致，但水印日期分别显示为06-27、06-10和05-30，人工复核后确认属于同图修改水印日期后重复使用；下部两张照片虽然相似度达到97.63%，但车辆位置、吊臂姿态和现场物体存在真实变化，人工确认并非重复。全量查重先把疑似问题筛出来，再由管理人员结合工单和现场情况判断。")
+    para(doc,"省公司试点中，程序曾在巡视照片里筛出一组500千伏特殊通道高相似候选。调取原始巡视记录后确认，同一区段两次人工巡视使用了重复照片，相关记录无法真实反映当时通道情况，最终被认定为人工巡视不到位，并定性为较大运检质量问题。这一案例成为照片查重进入实际管理的典型节点。")
+    para(doc,"目前查重结果已经进入省公司生产管控中心实际管理通报，累计形成照片重复类问题19项，其中告警工单反馈照片重复11项、人工巡视照片重复8项。问题覆盖两类业务，说明照片查重已经从个人开发工具进入省级生产管理应用。")
     page_break(doc)
     # 14 algorithm
-    h2(doc,"2.构建pHash + CLIP双阶段筛选流程")
-    para(doc,"为兼顾全量筛选效率和疑似重复识别能力，本案例设计并实现了基于pHash与CLIP的双阶段处理流程。第一阶段利用感知哈希pHash和汉明距离，以较低计算成本快速召回构图近似照片；第二阶段利用CLIP图像向量对候选进行语义相似度复核，识别经过裁剪、调色、旋转、局部消除后仍表达相同现场内容的照片。结合真实样本验证，现有告警工单规则采用“pHash＜10且CLIP＞0.80”生成候选。")
-    para(doc,"阈值确定时重点考虑两类风险。阈值过严会漏掉经过裁剪、压缩或修改水印的重复照片；阈值过宽又会把大量正常相似照片推给人工，失去筛选意义。因此，参数通过真实工单样本反复查看误报和漏报情况进行校准，并把候选量控制在人工能够复核的范围内。")
-    para(doc,"pHash更关注画面整体结构，速度快，适合承担第一轮筛选；CLIP对画面语义和主体内容的表达更稳定，适合对候选进行第二轮判断。两者结合后，可以先用低成本方法缩小范围，再把计算资源集中到少量更值得检查的照片对上。")
+    h2(doc,"2.照片查重：pHash先筛，CLIP再比")
+    para(doc,"为兼顾全量筛选效率和疑似重复识别能力，本案例设计并实现了基于感知哈希（perceptual hash，pHash）与对比语言—图像预训练模型（Contrastive Language–Image Pre-training，CLIP）的双阶段处理流程。第一阶段利用pHash及汉明距离，以较低计算成本快速召回构图近似照片；第二阶段利用CLIP图像向量对候选进行相似度复核，用于补充裁剪、调色、旋转、局部遮挡等变化下的候选识别能力。结合真实样本验证，现有告警工单规则采用“pHash汉明距离＜10且CLIP相似度＞0.80”生成候选。")
+    para(doc,"阈值确定时同时考虑漏报和人工复核量。阈值过严可能漏掉裁剪、压缩或修改水印后的重复照片，过宽又会产生大量正常相似候选。pHash负责低成本筛出整体结构接近的照片，CLIP再对这些候选做语义比较，参数通过真实工单样本反复校准，并把候选量控制在人工能够复核的范围内。")
+    para(doc,"pHash的输入是经过统一方向和尺寸处理后的图像。程序提取低频结构信息并生成固定长度的感知指纹，两张照片的指纹通过汉明距离比较，距离越小表示整体构图越接近。与普通文件哈希相比，这种方法对重新压缩、格式变化、轻度亮度变化和局部水印修改更稳定，适合承担海量照片的第一轮快速召回。")
+    paper_equation(doc,"hamming","3")
+    para(doc,"式（3）表示两个感知指纹在全部比特位置上的差异数量，其中h₁、h₂为两张照片的感知指纹，L为指纹长度，I(·)为指示函数，条件成立取1，否则取0。当前告警工单规则要求pHash汉明距离小于10，意味着只有整体结构足够接近的照片才进入下一层。pHash阶段重点追求低成本召回，因此它只判断“值得继续比较”，不会直接对照片重复性质作结论。",together=True)
+    para(doc,"CLIP阶段将候选照片映射为图像特征向量，再计算向量相似程度，用于补充pHash主要关注整体构图的局限。实际样本中曾出现CLIP相似度达到97.63%、最终人工确认不同的照片，说明高相似度仍需要结合车辆位置、吊臂姿态、作业对象和时间关系进行业务复核。")
+    para(doc,"双阈值采用同时满足的方式生成候选：结构层先控制构图差异，语义层再控制内容差异。两个阈值承担的角色不同，pHash阈值主要影响第一层召回范围，CLIP阈值影响进入人工队列的候选纯度。参数调整时需要观察确认重复、确认不同和待复核三类结果的变化，防止只追求候选数量下降而增加漏检风险。")
+    paper_table(doc,"表5　照片查重分层筛选流程及责任边界",("阶段","输入","主要处理","输出及用途"),(
+        ("照片标准化","原始反馈照片、巡视照片","方向修正、尺寸与颜色通道统一、异常文件检查","统一图像输入"),
+        ("pHash召回","标准化图像","感知指纹计算、汉明距离筛选","结构近似候选"),
+        ("CLIP复核","pHash候选","图像特征向量提取、相似度计算","高价值疑似照片对"),
+        ("候选归并","多批次候选","照片对标准化、重复关系合并、关联任务信息","人工复核队列"),
+        ("人工终审","原图、相似度、任务和时间信息","核对现场变化、水印、对象和业务背景","确认重复、确认不同、待复核"),
+    ),widths=(2.3,3.5,4.6,3.8),note="当前告警工单候选规则采用pHash汉明距离＜10且CLIP相似度＞0.80；阈值用于候选生成，不直接形成质量问题定性。")
+    para(doc,"从111,519张反馈照片筛出5,472对候选后，已有4,630对完成人工复核，其中348对确认重复、4,282对确认不同。大量“确认不同”样本具有重要作用：一方面验证候选规则是否把正常高相似场景覆盖进来，另一方面为后续调整阈值提供反例，防止筛选规则只围绕已发现的重复样本优化。")
+    para(doc,"从组合规模看，111,519张照片若不附加任何业务约束，理论两两组合约62.18亿对，最终进入人工队列的只有5,472对。这个数量级只用于说明无约束搜索空间，不能理解为程序实际完成了62.18亿次高成本精细比对。候选生成的作用是尽早压缩搜索范围，把语义计算和人工复核集中到较小的数据集合。已复核候选中确认重复348对，占4,630对已复核候选的7.52%；这一指标反映候选队列的实际复核结果，不代表全部照片的重复率。")
+    para(doc,"评价候选算法时需要区分三个层次。第一层看计算完整性，确认照片是否成功进入标准化和特征计算；第二层看候选有效性，关注候选数量、已复核比例以及确认重复与确认不同的分布；第三层看管理应用，确认算法发现的问题是否能够通过原图、任务记录和现场信息完成终审。三个层次分别回答“有没有算到”“筛出来的是否值得看”“能否形成可靠业务结论”。")
+    para(doc,"当前数据中4,282对候选被确认不同，这些反例同样是阈值校准的重要样本。如果只用348对确认重复样本优化规则，阈值可能逐渐偏向已知重复形式，对相似但正常的现场变化缺少约束。实际校准需要同时抽取确认重复和确认不同样本，观察阈值调整前后候选集合变化，并检查典型水印修改、裁剪和高相似不同场景是否仍保持合理结果。")
+    para(doc,"由于全量照片尚未建立人工逐对标注的完整真值集，本案例不计算缺乏完整验证基础的准确率、召回率等指标。现阶段采用可直接核实的候选量、复核量、确认重复量、确认不同量和通报问题量描述运行结果，同时保留典型正反样本用于说明算法边界。该评价口径与实际管理流程保持一致。")
+    paper_table(doc,"表6　告警工单照片筛查规模与评价口径",("指标","数值","技术含义","使用注意"),(
+        ("反馈照片总量","111,519张","全量筛查的数据入口","表示照片数量，不表示组合数量"),
+        ("无约束理论两两组合","约62.18亿对","说明未附加业务约束时的搜索空间规模","仅用于量级分析"),
+        ("机器候选","5,472对","双阶段规则输出的人工复核入口","候选不等同于重复"),
+        ("已人工复核","4,630对","已有明确业务判断的候选","另有842对待复核"),
+        ("确认重复","348对","人工终审确认的重复照片关系","属于业务结论"),
+        ("已复核候选重复占比","7.52%","348÷4,630，反映已复核候选结果","不能解释为全量照片重复率"),
+    ),widths=(3.1,2.5,4.8,4.0),note="理论组合用于说明搜索空间规模；实际程序通过分层候选生成避免进行全量高成本精细比对。")
     para(doc,"分层候选生成主要包括以下四个步骤：",14,True,keep=True)
     bullet(doc,"图像标准化：统一尺寸、方向和颜色通道，降低格式差异。")
     bullet(doc,"pHash快速召回：用低成本结构指纹从全量照片中筛出近似候选。")
-    bullet(doc,"CLIP语义复核：对候选进行更精细的场景和对象相似度比较。")
+    bullet(doc,"CLIP相似度复核：对候选照片的图像特征向量进行相似度比较。")
     bullet(doc,"双阈值筛选：同时满足结构与语义条件时进入人工复核队列。")
     para(doc,"人工复核与业务认定。系统将原图对比、相似度和关联业务信息集中呈现，复核人员结合拍摄时间、工单对象、现场细节和水印变化开展业务认定。通过分层筛选，大幅压缩需要人工查看的数据范围，使管理人员从海量照片逐张核对转向疑似异常照片对重点复核，提高质量监督效率。")
     page_break(doc)
     # 15 innovation 2
-    h2(doc,"3.突破少量特高压限制，扩展到全电压等级")
-    para(doc,"告警工单查重跑通后，我开始处理规模更大的巡视照片。此前由电力信息公司提供的既有照片查重能力主要覆盖少量特高压巡视照片，尚无法满足全电压等级海量照片的常态化筛查需求。扩展到全电压等级后，每月需要处理约1245万张巡视照片，理论两两组合约77.5万亿，原有处理方式无法直接放大。因此重新设计了候选生成、特征复用、分批调度、结果去重和断点续算等处理流程。")
+    h2(doc,"3.巡视照片：把查重范围扩展到全电压等级")
+    para(doc,"告警工单查重跑通后，我开始处理规模更大的巡视照片。此前由电力信息公司提供的既有照片查重能力主要覆盖少量特高压巡视照片，尚无法满足全电压等级海量照片的常态化筛查需求。扩展到全电压等级后，每月需要处理约1245万张巡视照片；若不附加任何约束，理论两两组合约77.5万亿对，原有处理方式无法直接放大。因此重新设计了候选生成、特征复用、分批调度、结果去重和断点续算等处理流程。")
     para(doc,"与原有处理范围相比，主要有三点变化：",14,True,keep=True)
     bullet(doc,"覆盖范围：从少量特高压扩展到全电压等级。")
     bullet(doc,"处理规模：从小规模照片筛查提升至每月1245万张。")
@@ -219,24 +461,80 @@ def build():
     para(doc,"完成上述改造后，查重范围从少量特高压照片扩展到全电压等级，目前能够按月处理约1245万张巡视照片。")
     page_break(doc)
     # 16 scale technical
-    h2(doc,"4.建立千万级照片工程化处理能力")
+    h2(doc,"4.千万级处理：让1245万张照片稳定跑完")
     para(doc,"为支撑每月1245万张照片持续运行，计算路径采用“特征预计算—低成本候选召回—高成本语义复核”的分层方式，将实际计算集中到极小比例的候选数据上。")
-    para(doc,"1245万张照片如果直接两两比较，理论组合约77.5万亿。这个数量级下，提高单次比较速度只能解决很小一部分问题，核心是减少真正进入精细比对的照片组合。程序先为每张照片计算一次可复用特征，再根据低成本特征寻找候选，只有候选才进入后续语义比较。已经处理过的照片特征保存下来，后续任务直接读取，避免重复计算。")
-    para(doc,"千万级数据还带来运行可靠性问题。一次任务可能持续较长时间，如果中途因机器重启、网络中断或单批数据异常而从头开始，实际使用成本会很高。因此程序把任务拆成稳定批次，每批结束后记录进度和结果；出现异常时只重跑受影响批次，已完成部分继续保留。")
-    para(doc,"程序按批次处理照片，并保存已完成进度；任务中断后可以从上次位置继续。已经计算过的特征直接复用，不同批次的结果统一去重归并，以保证千万级数据可以持续处理。")
+    para(doc,"1245万张照片若进行无约束两两组合，理论规模约77.5万亿对。这个数量级下，提高单次比较速度只能解决很小一部分问题，核心是减少真正进入精细比对的照片组合。程序先为每张照片计算一次可复用特征，再根据低成本特征寻找候选，只有候选才进入后续语义比较。已经处理过的照片特征保存下来，后续任务直接读取，避免重复计算。")
+    paper_equation(doc,"combinations","4")
+    para(doc,"式（4）中N为参与查重的照片数量，C(N,2)为两两组合数量，说明全组合规模随照片数量近似按平方增长。N达到千万级以后，即使每次比较耗时很短，组合总量仍会迅速超过常规任务能够承受的范围。因此工程设计把主要精力放在候选空间收敛、特征复用和任务可恢复性上，避免把优化重点局限在单次推理速度。",together=True)
+    para(doc,"千万级数据还带来运行可靠性问题。程序把任务拆成稳定批次，每批结束后记录进度和结果；机器重启、网络中断或单批数据异常时，只重跑受影响批次，已经完成的进度和特征继续复用，不同批次结果统一去重归并。")
+    para(doc,"工程实现中把“照片特征”和“照片两两关系”分开管理。单张照片的特征只需要计算一次，后续不同批次、不同时间范围检索时可以直接复用；候选照片对则采用稳定的两端标识排序，保证A-B与B-A不会形成两条重复结果。每个批次同时记录输入范围、完成状态和输出数量，为断点续算和异常追踪提供依据。")
+    para(doc,"批次设计还需要控制内存和中间结果规模。读取照片、提取特征、召回候选和语义复核分别按可控数据块执行，完成一批即释放无关中间对象并保存结果。某一批次失败时，调度层根据状态记录重新执行该批次，其余已完成数据保持有效。这样可以把长时间运行任务拆成可检查、可恢复的执行单元。")
+    paper_table(doc,"表7　千万级照片处理的工程化机制",("机制","主要问题","处理方式","工程作用"),(
+        ("特征预计算","同一照片被多次读取和推理","单图特征计算后持久复用","降低重复计算量"),
+        ("低成本召回","全组合数量约77.5万亿对","先用低成本特征缩小候选范围","减少高成本比较"),
+        ("分批调度","单任务数据量过大","按批次读取、计算、保存并释放资源","控制内存与运行窗口"),
+        ("断点续算","长任务可能被重启或异常中断","记录已完成批次和处理位置","避免整月数据从头运行"),
+        ("异常重试","个别文件或批次处理失败","隔离失败批次并单独重跑","提高整体任务完成率"),
+        ("结果归并","跨批次产生重复照片关系","统一照片对顺序并去重汇总","生成唯一复核清单"),
+    ),widths=(2.2,3.9,4.6,3.7),note="工程目标是在保持结果可追溯的前提下，使全电压等级月度照片筛查能够持续运行。")
+    para(doc,"为了让批处理结果具备可审计性，每个执行批次至少需要记录数据范围、任务状态、已完成位置、异常数量和输出候选数量；照片特征记录与原始照片保持稳定关联，候选记录则保存两端照片标识、pHash汉明距离、CLIP相似度和关联业务对象。这样在复核阶段可以从候选回到原图，在异常排查阶段也可以从原图追到特征和批次。")
+    paper_table(doc,"表8　千万级查重关键记录与复现信息",("记录对象","关键字段及信息","主要用途"),(
+        ("照片记录","照片标识、来源任务、拍摄时间、文件状态","关联原图与业务对象，识别异常文件"),
+        ("特征记录","照片标识、pHash、CLIP特征状态、计算版本","复用已完成特征，支持版本核对"),
+        ("规则记录","pHash汉明距离阈值、CLIP相似度阈值、规则版本","解释候选生成条件，支持参数复盘"),
+        ("批次记录","输入范围、开始状态、结束状态、完成位置、异常计数","断点续算、失败隔离和运行审计"),
+        ("候选记录","照片A、B标识、pHash汉明距离、CLIP相似度、批次来源","人工复核、候选去重和结果复现"),
+        ("复核记录","确认重复、确认不同、待复核、复核备注、关联问题","回写管理结论并形成后续校准样本"),
+    ),widths=(2.6,6.9,4.9),note="记录应支持从管理结论反向追溯到候选、规则、特征、原始照片和执行批次，并可复现当次候选生成条件。")
+    para(doc,"运行监测重点观察三类信号：一是任务是否持续推进，包括批次完成率和异常批次数；二是数据是否出现异常，包括无法读取照片、缺失关联信息和特征计算失败；三是候选输出是否突然发生数量级变化。候选量异常升高可能意味着数据批次结构、阈值或输入质量发生变化，需要在人工复核前先检查计算链。")
+    para(doc,"照片候选的工程测试需要覆盖不同变化类型。完全相同文件只能证明基础路径正确，真实业务中更重要的是修改水印、压缩、轻度裁剪、亮度变化和高相似不同场景。正样本用于检查重复照片能否进入候选，反样本用于检查算法是否把真实变化保留给人工判断，异常文件则验证任务是否能够跳过单点故障并继续运行。")
+    paper_table(doc,"表9　照片查重典型样本类型及验证关注点",("样本类型","典型变化","机器侧关注","人工复核关注"),(
+        ("完全重复","文件内容一致或仅重新保存","应稳定进入低成本候选","核对任务来源和时间"),
+        ("水印修改","主体一致，日期或文字水印变化","结构与语义特征应保持较高相似","确认是否跨任务复用"),
+        ("裁剪、压缩","边缘裁剪、分辨率和压缩率变化","检查召回稳定性","核对关键现场细节"),
+        ("高相似不同","同位置、同设备、构图接近但现场发生变化","允许进入候选队列","识别车辆、人员、机械姿态等真实变化"),
+        ("异常文件","损坏、无法解码、缺失关联信息","记录异常并隔离，不阻塞整批任务","补充数据或确认无需复核"),
+    ),widths=(2.6,3.6,4.4,3.7),note="真实反例与确认重复样本同时保留，用于检查候选规则对不同业务场景的覆盖情况。")
+    para(doc,"批处理验证还要关注“重复运行是否得到一致结果”。同一批数据在规则和特征版本不变的条件下重新执行，候选集合应保持稳定；已经完成的批次再次启动时，不应生成重复复核记录；失败批次恢复后，最终结果需要与连续执行保持一致。这样的验证可以防止断点续算和重试机制本身引入重复数据。")
+    paper_table(doc,"表10　批处理稳定性与可追溯性检查项",("检查项","检查方法","通过标准"),(
+        ("输入完整性","核对批次照片数、异常文件数和关联任务数","输入范围可解释，异常有记录"),
+        ("执行可恢复性","人为中断后从状态记录恢复任务","已完成批次不重复计算，失败批次可继续"),
+        ("结果幂等性","同一输入和规则重复运行","候选关系不重复增加，结果集合保持一致"),
+        ("候选可追溯性","从任一候选回查照片、特征和来源批次","链路信息完整，可定位原始数据"),
+        ("规则可复现性","记录候选生成所用阈值和处理版本","同版本输入能够复现候选结果"),
+        ("业务闭环性","抽查确认重复与确认不同结果的后续记录","复核结论能够回写并保留状态"),
+    ),widths=(2.9,6.5,5.0),note="稳定性检查重点约束长周期任务的可恢复、可复现和可审计特性。")
+    para(doc,"月度任务持续运行后，数据、特征和规则会在不同时间发生变化。为了减少无效重算，需要区分“原始数据变化”和“筛选规则变化”：原始照片发生变化时应重新生成对应特征；仅调整候选阈值时，可以复用已有特征重新生成候选；更换特征模型或特征计算逻辑时，再重算受影响特征。把变化类型与重算范围分开，可以降低规则校准对全量处理成本的影响。")
+    paper_table(doc,"表11　不同变更类型对应的重算范围",("变更类型","可复用内容","需要重新处理","主要原因"),(
+        ("新增照片","历史照片特征和已完成批次","新增照片特征及其候选关系","新增数据需要进入索引和候选生成"),
+        ("照片文件变化","其他照片特征","变化照片的特征和相关候选","原图内容已改变"),
+        ("双阈值调整","已计算的照片特征","候选筛选与结果归并","特征本身没有变化"),
+        ("特征算法或模型变化","原始照片与业务关联","受影响特征及后续候选","特征空间发生变化"),
+        ("业务关联信息修正","图像特征和视觉候选","任务关联与复核展示信息","视觉内容不受影响"),
+    ),widths=(3.4,3.6,4.0,3.3),note="通过隔离特征计算、候选生成和业务关联三个层次，规则调整可以尽量避免重新处理全部原图。")
+    para(doc,"规则变更还需要保留版本信息。结合表8的记录链，当次任务至少应保存照片来源和时间范围、特征计算版本、pHash汉明距离阈值、CLIP相似度阈值、批次执行状态以及候选和复核结果。这样同一组照片在参数调整后出现不同候选数量时，可以区分规则升级、输入变化和执行异常，并复现当次候选生成条件。")
     para(doc,"查重程序只负责给出疑似照片对，最终是否属于重复使用仍由管理人员结合任务时间、作业对象、现场细节和业务要求判断。这样既能覆盖海量历史照片，又不会把算法相似度直接当作管理结论。")
+    h2(doc,"5.技术边界与误差控制：让结果可解释、可复核")
+    para(doc,"数字化筛选扩大了管理覆盖范围，同时也带来新的误差来源。空间计算依赖坐标和线路拓扑准确性，公开生态数据存在采样偏差，图像相似度存在误报与漏报。系统设计中保留异常数据、候选依据和人工终审环节，使每类误差都能在对应环节被发现和修正。")
+    paper_table(doc,"表12　主要技术边界及控制措施",("技术环节","主要边界或误差来源","控制措施","最终责任"),(
+        ("线路空间计算","坐标偏移、杆号顺序异常、外部要素误差","异常检测、拓扑核对、候选现场复核","主业人员确认跨越关系"),
+        ("鸟类活动分析","公开发生记录时空分布不均，不能直接代表实时风险","仅作任务范围参考；业务复核结合周边环境","现场核验确认鸟害风险"),
+        ("照片相似度筛选","正常场景高度相似、裁剪遮挡可能影响召回","双阶段筛选、正反样本校准、保留人工终审","管理人员认定照片是否重复"),
+        ("千万级批处理","中断、异常文件、跨批次重复候选","批次状态记录、断点续算、失败隔离、结果去重","系统核查完整性，人员确认业务结论"),
+    ),widths=(2.5,4.1,4.0,3.7),note="技术边界在系统设计阶段显式保留，算法输出始终作为任务线索和证据候选。")
+    para(doc,"从应用角度看，技术可靠性由“数据质量、算法筛选、人工核验”三部分共同保障。空间任务中重点关注漏掉应核验对象的风险，照片任务中重点控制漏报风险和人工复核负荷。后续每次现场确认和照片终审都会产生新的正、反样本，持续用于检查规则是否偏离实际业务。")
     page_break(doc)
     # 17 effects
     h1(doc,"四、实施效果")
     h2(doc,"（一）增效：把外协全量排查变成精准核验")
     para(doc,"交叉跨越、防鸟和集中燃放点共用线路、杆塔及空间位置等基础数据，不同专项不再重复整理同一批资料。某地市重要跨越排查原需十余人、近两周，程序数分钟即可完成，并补充发现十余处此前人工遗漏的重要跨越信息；后续集中燃放点任务直接复用已有程序，调整参数后即可批量计算。")
-    para(doc,"从人员分工看，原来外协人员拿到的是大范围排查要求，需要花时间找目标、查位置、判断是否需要到现场；现在先由程序生成候选清单，外协人员主要负责现场确认。主业人员也减少了反复整理基础资料的工作，可以把时间放在候选复核、风险判断和问题处置上。")
+    para(doc,"人员分工也更清楚：程序先生成候选清单，外协人员主要负责现场确认，主业人员把更多时间用于候选复核、风险判断和问题处置。")
     h2(doc,"（二）提质：把有限人工抽查变成全量质量监督")
     para(doc,f"告警工单照片查重从无到有，在{CFG['metrics']['alarm_photos']:,}张反馈照片中筛出{CFG['metrics']['alarm_candidates']:,}对疑似相似照片，目前已确认{CFG['metrics']['alarm_confirmed_pairs']:,}对重复照片。省公司试点同时覆盖告警工单反馈照片和巡视照片，累计发现并形成通报的照片重复类问题{CFG['metrics']['province_trial_duplicate_issues']}项，其中告警工单反馈照片重复{CFG['metrics']['province_trial_alarm_duplicate_issues']}项、人工巡视照片重复{CFG['metrics']['province_trial_patrol_duplicate_issues']}项；其中{CFG['metrics']['province_trial_major_special_corridor_issues']}项500千伏特殊通道人工巡视照片重复问题被定性为较大运检质量问题。巡视照片查重也已从原有少量特高压范围扩展到全电压等级，目前可按月处理约1245万张巡视照片。")
-    para(doc,"管理方式也发生了实际变化。过去照片问题主要靠抽查，能否发现重复很大程度取决于抽查范围以及人员是否见过历史照片。现在进入筛查范围的照片都先经过程序比对，再由人工集中处理候选。19项问题能够进入省公司通报，说明查重结果已经直接服务于履职质量监督。")
+    para(doc,"过去照片问题主要靠抽查，能否发现重复很大程度取决于抽查范围以及人员是否见过历史照片。现在进入筛查范围的照片先经过程序比对，再由人工集中处理候选；19项问题进入省公司通报，查重结果已经直接服务于履职质量监督。")
     h2(doc,"（三）管理方式：从人海式管理转向数智协同")
     para(doc,"交叉跨越、防鸟和集中燃放点可以共用线路空间数据和筛选程序，告警工单与巡视照片查重也采用同一套候选筛选思路。相关核心算法和程序均由我自主设计、开发和验证。告警工单反馈照片查重和巡视照片查重已经在省公司试点，发现的问题已多次进入省公司运检工作质量远程督查通报，说明这些程序已经用于实际管理。")
-    para(doc,"这套方法推广时不依赖新增现场硬件。线路、杆塔、工单和照片都是现有业务数据，其他地市主要需要统一字段、坐标格式和任务规则，再根据本地业务要求配置筛选参数。空间筛选和照片查重的程序主体可以直接复用，减少重复开发。")
+    para(doc,"这套方法推广时不依赖新增现场硬件。线路、杆塔、工单和照片都是现有业务数据，其他地市完成字段映射、坐标统一和规则配置后，可以直接复用现有计算流程。复制重点可以概括为三件事：接数据、配规则、走闭环。")
     figure(doc,"outcomes","图10　外协管理由粗放管理向数智协同管理转型",12.8)
     # 18 recommendations
     h1(doc,"五、推广应用建议")
@@ -248,10 +546,10 @@ def build():
     para(doc,"程序追求全量覆盖和高效召回，人员负责业务真实性判断和处置闭环，避免把算法相似度直接等同于管理结论。")
     h2(doc,"4.建立数据持续更新与成效评价机制")
     para(doc,"下一步结合省公司试点情况，把现场核验结果、设备变更信息和照片复核结论及时回写，并同步记录专项排查耗时、候选核验量和异常发现数量。推广前重点统一数据接口、规则参数和处理流程，再向其他地市公司推广应用。")
-    para(doc,"推广前要明确线路、杆塔、坐标和外部数据的更新责任，并固定照片候选生成、人工复核和问题反馈流程。已经确认的正常相似照片和异常样本保留复核结果，供后续参数校准。")
-    para(doc,"推广后的评价以实际工作结果为主。任务侧统计候选数量、现场核验量和人工耗时，质量侧统计候选照片对、确认问题数量和复核工作量，再根据这些数据调整规则。")
+    para(doc,"推广时要明确线路、杆塔、坐标和外部数据的更新责任，并固定照片候选生成、人工复核和问题反馈流程。评价直接看实际工作结果：任务侧统计候选数量、现场核验量和人工耗时，质量侧统计候选照片对、确认问题数量和复核工作量，再根据结果调整规则。")
     h2(doc,"结语")
-    para(doc,"这项工作最初只是为了解决一次交叉跨越排查，后来同一套空间计算方法又用到了防鸟和集中燃放点；照片查重也从告警工单扩展到了全电压等级巡视照片。回过头看，做法其实很明确：增效管任务、提质管履职，程序先处理全量数据，人再对筛出的重点对象作专业判断。对外协管理来说，真正减少的是重复查找和低效抽查，把有限的人力留给现场核验和问题处置。",14,True)
+    para(doc,"本案例从一次交叉跨越排查起步，先把线路、杆塔与外部目标之间的空间关系转化为批量计算，再将同一套数据处理思路用于防鸟和集中燃放点；随后围绕外协履职真实性建立照片查重流程，并把处理范围扩展到全电压等级。实践过程可以归纳为数据标准化、规则计算、候选生成、现场或人工复核、结果回写五个连续环节，各专项的差异主要体现在数据源和业务规则。",14,False,together=True)
+    para(doc,"由此形成的“增效管任务、提质管履职”路径，核心价值在于让程序稳定承担大规模重复计算，让外协和主业人员把精力集中到现场确认、风险判断和问题处置。后续推广仍应坚持候选结果可追溯、规则参数可复现、异常数据可复核、业务责任边界清晰，并按照“接数据、配规则、走闭环”的顺序完成本地化配置。这样可以在不新增现场硬件的条件下复用现有方法，同时保留人工对最终业务结论的责任。",14,False,together=True)
     OUT.parent.mkdir(parents=True,exist_ok=True);doc.save(OUT)
     print(f"[report] generated {OUT}")
 
