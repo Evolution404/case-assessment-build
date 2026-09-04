@@ -52,6 +52,13 @@
     "province_trial_major_special_corridor_issues": 1,
     "patrol_photos_monthly": 12450000,
     "patrol_duplicate_pairs": 55411,
+    "metric_levels": {
+      "alarm_confirmed_pairs": "告警工单：人工终审确认的重复照片关系（照片对层级）",
+      "province_trial_duplicate_issues": "省级管理通报：进入管理闭环的照片重复类问题项（管理问题层级）",
+      "province_trial_alarm_duplicate_issues": "省级管理通报：告警工单反馈照片重复问题项（管理问题层级）",
+      "province_trial_patrol_duplicate_issues": "省级管理通报：人工巡视照片重复问题项（管理问题层级）",
+      "patrol_duplicate_pairs": "巡视照片：规模化查重输出的重复照片关系（照片对层级）"
+    },
     "scale_multiple": 110,
     "theoretical_pairs": 77501243775000,
     "pairs_per_duplicate": 1398660000
@@ -70,7 +77,7 @@
   },
   "privacy": {
     "allowed_specific_org": "电力信息公司",
-    "map_notice": "全省脱敏仿真数据，仅用于方法演示",
+    "map_notice": "全省演示数据，仅用于方法展示",
     "photo_notice": "案例照片已去除地市、线路、杆号、时间水印和个人信息"
   }
 }

@@ -16,5 +16,5 @@ try{
   await page.emulateMedia({media:'print'});
   await page.waitForFunction(()=>document.documentElement.dataset.ready==='1');
   await page.pdf({path:output,width:'1280px',height:'720px',printBackground:true,preferCSSPageSize:true,tagged:true,outline:false,margin:{top:'0',right:'0',bottom:'0',left:'0'}});
-  console.log(`[pdf] 15 pages -> ${output}`);
+  console.log(`[pdf] ${await page.locator('.slide').count()} pages -> ${output}`);
 }finally{await browser.close()}

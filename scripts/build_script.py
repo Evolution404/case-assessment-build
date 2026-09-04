@@ -1,47 +1,222 @@
 #!/usr/bin/env python3
-import json,os
+import json
+import os
+import re
 from pathlib import Path
+
 from docx import Document
-from docx.shared import Pt,Cm,RGBColor
-from docx.enum.text import WD_ALIGN_PARAGRAPH,WD_LINE_SPACING
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
+from docx.shared import Inches, Pt, RGBColor
 
-ROOT=Path(__file__).resolve().parents[1];CFG=json.loads((ROOT/"content/case.json").read_text(encoding="utf-8"));OUT=ROOT/"dist/答辩逐字稿-从人海作业到数智协同.docx";CASE_ID=os.environ.get("CASE_ID",CFG["case_id_default"]);FONT="FangSong_GB2312"
+ROOT = Path(__file__).resolve().parents[1]
+CFG = json.loads((ROOT / "content/case.json").read_text(encoding="utf-8"))
+DEFENSE = json.loads((ROOT / "content/defense.json").read_text(encoding="utf-8"))
+OUT = ROOT / "dist/答辩逐字稿-从人海作业到数智协同.docx"
+CASE_ID = os.environ.get("CASE_ID", CFG["case_id_default"])
 
-SLIDES=[
-("0:00—0:35","封面","翻到封面后停顿，面向评委","各位评委老师，大家好。今天汇报的题目是《从人海作业到数智协同——输电运检外协队伍提效增质实践》。这是一项由我从实际工作问题出发、自主设计并推动落地的个人案例。全文围绕外协管理两大痛点展开：工作量大，用数字化筛选提效；质量难保证，用照片全量查重增质。"),
-("0:35—1:20","外协工作同时面临效率和质量压力","指向左右两类问题","外协工作点多、线长、任务频繁。交叉跨越、防鸟、燃放点等专项排查，如果全靠人工逐段找、逐点查，会投入大量时间；另一方面，告警工单和巡视照片数量巨大，靠人工抽查无法稳定发现重复上传。一个是工作量大，一个是质量难保证，因此必须分别用“提效”和“增质”破题。"),
-("1:20—2:00","数字化双轮飞轮","等待飞轮中心出现，再依次指向五个节点","我把这套方法归纳为“提效管任务、增质管履职”。提效对应交叉跨越、防鸟、集中燃放点等任务数字化筛选，让外协从全量摸排转向精准核验；增质对应告警工单和巡视照片查重，让外协质量监督从有限抽查转向全量检查。每跑一轮，机器先把全量任务算完，人员把专业判断写回；下一轮数据更全、规则更准、处置更快。"),
-("2:00—2:40","共用能力轴心","按流程从左到右讲","两个轮子共用同一个轴心：先把坐标、图层和照片整理成机器能算的数据；再把业务经验转成求交、缓冲、聚类和相似度规则；机器完成全量筛选；人员复核候选；最后把清单、结论和规则沉淀下来。机器负责全量与速度，人员负责判断与责任。"),
-("2:40—3:20","全省数据底座与脱密","强调真实库不进入演示文件","原始杆塔库包含约40.1万基杆塔、9217条线路。生产分析使用真实数据，但答辩演示不保存真实经纬度、线路名和杆号。演示层只使用匿名、扰动、量化后的画布坐标，并优先加载500千伏及以上数据模型，既保证全省效果，也保证现场交互流畅和数据安全。"),
-("3:20—4:00","提效：数字化筛选减少外协无效排查","指出线、点、面三类对象","提效有三个场景，但管理目标完全一致：系统先从全量对象中筛出重点，再让外协按清单精准核验。交叉跨越计算线线关系；防鸟利用GBIF鸟类活动数据和公开生态资料与线路空间叠加；集中燃放点计算周边线路杆塔。"),
-("4:00—5:35","全省地图交互演示","依次点击“交叉跨越”“防鸟”“燃放点”，每次停留约20秒","先看交叉跨越。程序先用包围盒排除不可能相交的组合，再做精确求交，把候选点直接标出来。再看防鸟，利用GBIF鸟类活动记录并结合公开生态资料形成重点活动区域，再与输电线路叠加，筛出需要外协重点核验的线路区段。最后看燃放点，围绕点位生成N米缓冲区，批量筛出周边杆塔。人的工作从全量寻找变成候选核验，这就是提效。"),
-("5:35—6:15","三类规则共用一套底座","关闭弹层，回到对照页","三类场景分别是线线求交、活动区域与线路叠加和点线距离，但坐标清洗、线路排序、异常检查、结果制图和清单输出都能复用。专项任务再来时，不需要重新从表格开始，只要换图层、换条件、换阈值。一次整理不只解决一次问题，效率提升才能持续。"),
-("6:15—6:55","提效成果","说明程序输出候选，人员负责现场确认","空间计算把全量排查交给程序，现场人员负责确认图层误差、现场条件和真实风险。程序先把范围收敛，外协人员带着候选清单精准核验。效率提高了，现场确认标准保持不变。"),
-("6:55—7:40","增质：照片查重强化外协履职质量监督","从提效转入增质","接下来讲增质。外协工单和巡视照片是证明到位、处置和履职的重要依据。人工能看清一张照片，却记不住成千上万张历史照片。照片经过裁剪、调色、旋转甚至局部消除后，更难靠肉眼发现。增质的关键，是把外协质量监督从有限抽查变成机器全量筛选、管理人员重点复核。"),
-("7:40—8:55","创新一：从0到1告警工单查重","点击照片查重，切换A/B并拖动滑块","告警工单照片查重是我从无到有独立做出来的。我先定义什么叫疑似重复，再设计机器筛选和人工认定流程。11.3万张照片先通过pHash和CLIP生成5472对候选，最终人工认定287对，候选命中率约5.2%。大家看这组脱敏照片，文件并不完全相同，但现场构图高度一致，这正是普通文件哈希发现不了的情况。"),
-("8:55—10:00","双阶段查重算法","按五个步骤讲，不展开公式","算法第一层使用pHash感知哈希，以较低成本召回构图近似照片；第二层用CLIP图像向量复核语义相似度。告警工单阶段采用pHash小于10、CLIP大于0.80的双阈值生成候选。照片先标准化和计算特征，候选按批次归并，最后由人工结合业务信息终审。算法只提供证据线索，不直接代替管理结论。"),
-("10:00—11:40","创新二：突破千万级规模","大标题停顿后再说直接表述","接下来是这项案例最核心的个人突破。既有能力只能实现极少量特高压巡视照片查重，无法覆盖全电压等级。电力信息公司没搞定的千万级照片查重，我搞定了。我重构了候选生成和工程处理流程，把筛查范围扩展到全电压等级，实现每月1245万张巡视照片的规模化查重。算法由小规模验证走到了全量生产运行。"),
-("11:40—13:15","1245万张照片如何跑得动","指向77.5万亿和分层收敛","1245万张照片如果两两组合，大约有77.5万亿种可能，不能全部算一遍。我的做法是先生成可复用特征，用低成本规则快速召回候选，再对候选做高成本语义复核。任务分批运行，支持断点续算，结果统一归并去重。最终识别55411对重复照片，平均约14亿种理论组合中才出现一对结果，真正实现了大海捞针。"),
-("13:15—15:00","结论与推广","飞轮持续转动时放慢语速，最后一句停顿","回到这项案例的两条主线。提效管任务，让交叉跨越、防鸟和燃放点等专项从外协全量摸排转向系统筛选、精准核验；增质管履职，让告警工单和巡视照片从有限抽查转向全量查重、异常重点复核。让双轮持续转起来，工作就会越做越快，结果越做越真。更重要的是，我完成了两个从无到有、从小到大的突破：独创告警工单查重，并把巡视照片查重扩展到全电压等级、每月千万级。机器承担重复劳动，专业判断回到关键环节。我的汇报完毕，谢谢各位评委。")]
+# compact_reference_guide + named rehearsal overrides
+LATIN_FONT = "Arial"
+CN_FONT = "Hiragino Sans GB"
+BODY_SIZE = 15
+BODY_LINE = 25
+RUST = "BD6549"
+BLUE = "537484"
+INK = "1D1C1A"
+MUTED = "756F67"
+PAPER = "F4F0E9"
 
-def set_run(r,size=16,bold=False,color="000000",font=FONT):
- r.font.name=font;r.font.size=Pt(size);r.font.bold=bold;r.font.color.rgb=RGBColor.from_string(color);rp=r._element.get_or_add_rPr();rf=rp.find(qn('w:rFonts'))
- if rf is None:rf=OxmlElement('w:rFonts');rp.append(rf)
- for k in ('ascii','hAnsi','eastAsia','cs'):rf.set(qn('w:'+k),font)
-def p(doc,text,size=16,bold=False,color="000000",indent=True,align=None,before=0,after=0,line=28):
- x=doc.add_paragraph();x.paragraph_format.line_spacing_rule=WD_LINE_SPACING.EXACTLY;x.paragraph_format.line_spacing=Pt(line);x.paragraph_format.space_before=Pt(before);x.paragraph_format.space_after=Pt(after)
- if indent:x.paragraph_format.first_line_indent=Pt(size*2)
- if align is not None:x.alignment=align
- set_run(x.add_run(text),size,bold,color);return x
+
+def speaker_tokens():
+    m = CFG["metrics"]
+    return {
+        "province_poles_wan1": f"{m['province_poles'] / 10000:.1f}万",
+        "province_lines_label": m["province_lines_report_label"],
+        "alarm_photos_comma": f"{m['alarm_photos']:,}",
+        "patrol_photos_wan0": f"{round(m['patrol_photos_monthly'] / 10000)}万",
+        "crossing_poles_comma": f"{m['crossing_poles']:,}",
+        "crossing_lines": str(m["crossing_lines"]),
+        "crossing_records": str(m["crossing_existing_records"]),
+        "crossing_people": m["crossing_people_before"],
+        "crossing_before": m["crossing_duration_before"],
+        "crossing_after": m["crossing_duration_after"],
+        "crossing_findings": m["crossing_additional_findings"],
+        "fireworks_turnaround": m["fireworks_turnaround"],
+        "alarm_candidates_comma": f"{m['alarm_candidates']:,}",
+        "alarm_reviewed_comma": f"{m['alarm_reviewed']:,}",
+        "alarm_confirmed_comma": f"{m['alarm_confirmed_pairs']:,}",
+        "alarm_different_comma": f"{m['alarm_confirmed_different']:,}",
+        "alarm_pending_comma": f"{m['alarm_pending']:,}",
+        "alarm_review_rate": f"{m['alarm_candidate_hit_rate']:.2f}%",
+        "trial_total": str(m["province_trial_duplicate_issues"]),
+        "trial_alarm": str(m["province_trial_alarm_duplicate_issues"]),
+        "trial_patrol": str(m["province_trial_patrol_duplicate_issues"]),
+        "theoretical_pairs_wan_yi": f"{m['theoretical_pairs'] / 1e12:.1f}万亿",
+        "patrol_pairs_comma": f"{m['patrol_duplicate_pairs']:,}",
+        "pairs_per_duplicate_yi": f"{round(m['pairs_per_duplicate'] / 1e8)}亿",
+    }
+
+
+TOKENS = speaker_tokens()
+
+
+def resolve(text):
+    value = re.sub(r"\{\{([a-z0-9_]+)\}\}", lambda m: TOKENS.get(m.group(1), m.group(0)), text)
+    if "{{" in value:
+        raise ValueError(f"未解析的逐字稿变量：{value}")
+    return value
+
+
+def set_run(run, size, bold=False, color=INK, font=LATIN_FONT):
+    run.font.name = font
+    run.font.size = Pt(size)
+    run.font.bold = bold
+    run.font.color.rgb = RGBColor.from_string(color)
+    rpr = run._element.get_or_add_rPr()
+    fonts = rpr.find(qn("w:rFonts"))
+    if fonts is None:
+        fonts = OxmlElement("w:rFonts")
+        rpr.append(fonts)
+    fonts.set(qn("w:ascii"), font)
+    fonts.set(qn("w:hAnsi"), font)
+    fonts.set(qn("w:eastAsia"), CN_FONT)
+    fonts.set(qn("w:cs"), font)
+
+
+def add_paragraph(doc, text, size=BODY_SIZE, bold=False, color=INK, align=None,
+                  before=0, after=6, line=BODY_LINE, first_indent=False):
+    para = doc.add_paragraph()
+    pf = para.paragraph_format
+    pf.space_before = Pt(before)
+    pf.space_after = Pt(after)
+    pf.line_spacing = Pt(line)
+    if first_indent:
+        pf.first_line_indent = Pt(size * 2)
+    if align is not None:
+        para.alignment = align
+    set_run(para.add_run(text), size, bold, color)
+    return para
+
+
+def add_left_rule(para, color=RUST, size="16", space="130"):
+    ppr = para._p.get_or_add_pPr()
+    borders = OxmlElement("w:pBdr")
+    left = OxmlElement("w:left")
+    left.set(qn("w:val"), "single")
+    left.set(qn("w:sz"), size)
+    left.set(qn("w:space"), space)
+    left.set(qn("w:color"), color)
+    borders.append(left)
+    ppr.append(borders)
+
+
+def shade(para, fill=PAPER):
+    ppr = para._p.get_or_add_pPr()
+    shd = OxmlElement("w:shd")
+    shd.set(qn("w:fill"), fill)
+    ppr.append(shd)
+
+
+def add_page_field(para):
+    para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    set_run(para.add_run("第 "), 9, False, MUTED)
+    fld = OxmlElement("w:fldSimple")
+    fld.set(qn("w:instr"), "PAGE")
+    run = OxmlElement("w:r")
+    text = OxmlElement("w:t")
+    text.text = "1"
+    run.append(text)
+    fld.append(run)
+    para._p.append(fld)
+    set_run(para.add_run(" / 12 页"), 9, False, MUTED)
+
+
+def setup_styles(doc):
+    normal = doc.styles["Normal"]
+    normal.font.name = LATIN_FONT
+    normal.font.size = Pt(11)
+    normal.paragraph_format.space_after = Pt(6)
+    normal.paragraph_format.line_spacing = 1.25
+    normal._element.rPr.rFonts.set(qn("w:eastAsia"), CN_FONT)
+    for style_name, size, color, before, after in (
+        ("Heading 1", 16, BLUE, 18, 10),
+        ("Heading 2", 13, BLUE, 14, 7),
+        ("Heading 3", 12, "1F4D78", 10, 5),
+    ):
+        style = doc.styles[style_name]
+        style.font.name = LATIN_FONT
+        style.font.size = Pt(size)
+        style.font.color.rgb = RGBColor.from_string(color)
+        style.paragraph_format.space_before = Pt(before)
+        style.paragraph_format.space_after = Pt(after)
+        style._element.rPr.rFonts.set(qn("w:eastAsia"), CN_FONT)
+
+
+def setup_section(section):
+    section.page_width = Inches(8.5)
+    section.page_height = Inches(11)
+    section.top_margin = Inches(0.8)
+    section.bottom_margin = Inches(0.75)
+    section.left_margin = Inches(0.9)
+    section.right_margin = Inches(0.9)
+    section.header_distance = Inches(0.35)
+    section.footer_distance = Inches(0.35)
+    header = section.header.paragraphs[0]
+    header.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    set_run(header.add_run("个人案例答辩｜从人海作业到数智协同"), 9, True, MUTED)
+    add_page_field(section.footer.paragraphs[0])
+
+
 def build():
- d=Document();s=d.sections[0];s.page_width=Cm(21);s.page_height=Cm(29.7);s.top_margin=Cm(2.3);s.bottom_margin=Cm(2.2);s.left_margin=Cm(2.6);s.right_margin=Cm(2.6)
- p(d,"答辩逐字稿",24,True,align=WD_ALIGN_PARAGRAPH.CENTER,indent=False,before=10,line=36);p(d,CFG['title']+"——"+CFG['subtitle'],16,False,align=WD_ALIGN_PARAGRAPH.CENTER,indent=False,after=6);p(d,CASE_ID,12,False,"666666",False,WD_ALIGN_PARAGRAPH.CENTER,after=18)
- for i,(time,title,cue,text) in enumerate(SLIDES,1):
-  p(d,f"第{i}页｜{title}",18,True,"C76142",False,before=6,after=2,line=30)
-  p(d,f"时间：{time}　操作：{cue}",11.5,False,"666666",False,after=5,line=22)
-  p(d,text,16,False,"000000",True,line=29)
-  if i!=len(SLIDES):d.add_page_break()
- OUT.parent.mkdir(parents=True,exist_ok=True);d.save(OUT);print(f"[script] generated {OUT}")
-if __name__=='__main__':build()
+    doc = Document()
+    setup_styles(doc)
+    setup_section(doc.sections[0])
+    doc.core_properties.title = "答辩逐字稿｜从人海作业到数智协同"
+    doc.core_properties.subject = "12分钟个人案例答辩逐字稿"
+    doc.core_properties.author = "案例答辩"
+    doc.core_properties.keywords = "外协管理, 增效, 提质, 数智协同"
+
+    slides = DEFENSE["slides"]
+    for index, item in enumerate(slides):
+        if index == 0:
+            add_paragraph(doc, "答辩逐字稿", 25, True, INK, WD_ALIGN_PARAGRAPH.CENTER, before=8, after=4, line=34)
+            add_paragraph(doc, CFG["title"] + "——" + CFG["subtitle"], 13.5, False, MUTED, WD_ALIGN_PARAGRAPH.CENTER, after=3, line=23)
+            add_paragraph(doc, CASE_ID, 10.5, False, MUTED, WD_ALIGN_PARAGRAPH.CENTER, after=18, line=18)
+        else:
+            add_paragraph(doc, "个人案例答辩", 9.5, True, RUST, before=4, after=12, line=16)
+
+        title_text = f"第{item['no']}页｜{item['title']}"
+        title = add_paragraph(doc, title_text, 19, True, INK, before=2, after=8, line=29)
+        add_left_rule(title)
+
+        meta = add_paragraph(
+            doc,
+            f"时间：{item['time']}\n操作：{item['cue']}\n过渡：{item['transition']}",
+            10.5,
+            False,
+            MUTED,
+            before=2,
+            after=16,
+            line=18,
+        )
+        meta.paragraph_format.left_indent = Pt(12)
+        meta.paragraph_format.right_indent = Pt(12)
+        shade(meta, "F1E9E1")
+
+        add_paragraph(doc, resolve(item["script"]), BODY_SIZE, False, INK, before=2, after=10, line=BODY_LINE, first_indent=True)
+
+        if item.get("sources"):
+            add_paragraph(doc, "资料口径：" + "；".join(item["sources"]), 9.5, False, MUTED, before=12, after=0, line=16)
+
+        if index != len(slides) - 1:
+            doc.add_page_break()
+
+    OUT.parent.mkdir(parents=True, exist_ok=True)
+    doc.save(OUT)
+    total_chars = sum(len(resolve(item["script"])) for item in slides)
+    print(f"[script] 12 pages, {total_chars} Chinese-script characters -> {OUT}")
+
+
+if __name__ == "__main__":
+    build()

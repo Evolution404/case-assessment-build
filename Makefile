@@ -24,6 +24,8 @@ assets: data
 	@mkdir -p assets/images .build/visuals
 	@"$(PYTHON)" scripts/sanitize_photos.py
 	@NODE_PATH="$(NODE_MODULES)" "$(NODE)" scripts/export_visuals.mjs
+	@if [ ! -f data/reference_demos.json ]; then NODE_MODULES="$(NODE_MODULES)" NODE_PATH="$(NODE_MODULES)" "$(NODE)" scripts/import_reference_demos.mjs; fi
+	@NODE_MODULES="$(NODE_MODULES)" NODE_PATH="$(NODE_MODULES)" "$(NODE)" scripts/render_reference_maps.mjs
 
 base-map:
 	@mkdir -p dist/figures
