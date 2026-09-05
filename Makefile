@@ -53,7 +53,7 @@ deck: assets
 
 report: assets base-map report-figures
 	@mkdir -p dist .build/report-render
-	@"$(PYTHON)" scripts/build_report.py
+	@"$(PYTHON)" scripts/build_report_review.py
 
 script:
 	@mkdir -p dist .build/script-render
