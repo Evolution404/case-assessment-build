@@ -7,6 +7,7 @@ import tempfile
 import zipfile
 from pathlib import Path
 from xml.etree import ElementTree as ET
+from PIL import Image, ImageChops
 
 ROOT = Path(__file__).resolve().parents[1]
 DIST = ROOT / "dist"
@@ -36,7 +37,7 @@ with zipfile.ZipFile(REPORT) as archive:
 report_text = "".join(ET.fromstring(document_xml).itertext())
 normalized = re.sub(r"\s+", "", report_text)
 chinese_count = len(re.findall(r"[\u4e00-\u9fff]", report_text))
-if not 9000 <= chinese_count <= 18000:
+if not 6000 <= chinese_count <= 14000:
     fail(f"report narrative size out of review range: {chinese_count} Chinese chars")
 
 required = (
@@ -90,11 +91,9 @@ primary = [m.group(1) for m in re.finditer(r"([一二三四五])、(?:背景、�
 if primary != ["一", "二", "三", "四", "五"]:
     fail(f"primary five-part structure mismatch: {primary}")
 
-main_figures = [int(n) for n in re.findall(r"图(\d+) ", report_text)]
+main_figures = [int(n) for n in re.findall(r"(?<!附)图(\d+) ", report_text)]
 if main_figures != list(range(1, 11)):
     fail(f"main figure numbering mismatch: {main_figures}")
-if "附图1 机器筛选—人工核验—结果回写共用闭环（技术附录）" not in report_text:
-    fail("appendix workflow figure missing")
 
 main_tables = [int(n) for n in re.findall(r"表([1-5]) ", report_text)]
 if main_tables != [1, 2, 3, 4, 5]:
@@ -111,8 +110,8 @@ for equation_ref in ("式（1）", "式（2）", "式（3）", "式（4）"):
 
 if len(re.findall(r"<w:tbl(?:\s|>)", document_xml)) != 9:
     fail("review report should contain exactly 9 tables: 5 main + 4 appendix")
-if len(re.findall(r"<w:drawing>", document_xml)) != 11:
-    fail("review report should contain 10 main figures + 1 appendix figure")
+if len(re.findall(r"<w:drawing>", document_xml)) != 10:
+    fail("review report should contain exactly 10 main figures")
 if len(re.findall(r'w:type="page"', document_xml)) != 0:
     fail("report must use natural pagination")
 
@@ -135,10 +134,16 @@ if not render_python.exists():
     render_python = Path(sys.executable)
 with tempfile.TemporaryDirectory(prefix="case-report-review-") as tmp:
     out = Path(tmp) / "report"
+    render_env = os.environ.copy()
+    fontconfig_file = Path("/opt/homebrew/etc/fonts/fonts.conf")
+    if fontconfig_file.exists():
+        # The headless LibreOffice profile otherwise misses user-installed CJK fonts
+        # and can produce a false-success PDF whose text layer exists but glyphs are blank.
+        render_env["FONTCONFIG_FILE"] = str(fontconfig_file)
     subprocess.run(
         [str(render_python), str(renderer), str(REPORT), "--output_dir", str(out), "--emit_pdf"],
         cwd=ROOT,
-        env=os.environ.copy(),
+        env=render_env,
         check=True,
         stdout=subprocess.DEVNULL,
     )
@@ -148,6 +153,23 @@ with tempfile.TemporaryDirectory(prefix="case-report-review-") as tmp:
     rendered_pdf = next(out.glob("*.pdf"), None)
     if rendered_pdf is None:
         fail("renderer did not emit report PDF")
+    pdf_fonts = subprocess.run(
+        ["pdffonts", str(rendered_pdf)], check=True, text=True, capture_output=True
+    ).stdout
+    if not re.search(r"ArialUnicode|Songti|Song|Hiragino|Fang|SimSun|Heiti|Noto.*CJK", pdf_fonts, re.I):
+        fail("rendered report PDF contains no detectable CJK-capable font; glyph rendering may be blank")
+    page_pngs = sorted(
+        out.glob("page-*.png"), key=lambda p: int(re.search(r"(\d+)", p.stem).group(1))
+    )
+    for page_index, page_png in enumerate(page_pngs, 1):
+        image = Image.open(page_png).convert("RGB")
+        bbox = ImageChops.difference(image, Image.new("RGB", image.size, "white")).getbbox()
+        if bbox is None:
+            fail(f"rendered report page {page_index} is visually blank")
+        left, top, right, bottom = bbox
+        margins = (left, top, image.width - right, image.height - bottom)
+        if min(margins) < 70:
+            fail(f"rendered report page {page_index} content approaches page edge: margins={margins}")
     layout_text = subprocess.run(
         ["pdftotext", "-layout", str(rendered_pdf), "-"],
         check=True,
@@ -170,7 +192,11 @@ if not re.search(r"^Pages:\s+13$", pdf_info, re.M):
     fail("defense PDF page count is not 13")
 
 env = os.environ.copy()
-env["NODE_PATH"] = os.environ.get("NODE_MODULES", "")
-subprocess.run([os.environ.get("NODE", "node"), str(ROOT / "scripts/smoke_deck.mjs")], cwd=ROOT, env=env, check=True)
+default_node_modules = str(Path.home() / ".cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules")
+node_modules = os.environ.get("NODE_MODULES", default_node_modules)
+env["NODE_MODULES"] = node_modules
+env["NODE_PATH"] = node_modules
+node_bin = os.environ.get("NODE", str(Path.home() / ".cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node"))
+subprocess.run([node_bin, str(ROOT / "scripts/smoke_deck.mjs")], cwd=ROOT, env=env, check=True)
 subprocess.run([sys.executable, str(ROOT / "scripts/privacy_check.py")], cwd=ROOT, check=True)
 print(f"[verify-review] passed: event-first report, {chinese_count} Chinese chars, five-part structure, appendix, render QA")

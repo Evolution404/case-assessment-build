@@ -259,16 +259,16 @@ def build():
         widths=(2.6, 3.8, 5.2, 3.2),
         note="数据清洗目标是保证异常可追溯。",
     )
-    para(doc, "交叉跨越的有限线段求交原理如下，实际精确几何运算由Shapely完成。", 11, line=20)
+    para(doc, "交叉跨越的有限线段求交原理如下，实际精确几何运算由Shapely完成。", 11, line=20, keep=True)
     paper_equation(doc, "intersection", "1")
     para(doc, "式（1）中A、B为输电线路段端点，C、D为外部线状要素端点，t、u为线段参数；共同点且参数位于[0,1]时才属于两条有限线段的真实交点。", 11, line=20)
-    para(doc, "防鸟展示图的活动表面采用公开鸟类发生记录进行栅格汇总和平滑，详细网格参数仅用于复现图形，不直接作为业务风险概率。", 11, line=20)
+    para(doc, "防鸟展示图的活动表面采用公开鸟类发生记录进行栅格汇总和平滑，详细网格参数仅用于复现图形，不直接作为业务风险概率。", 11, line=20, keep=True)
     paper_equation(doc, "bird_surface", "2")
     para(doc, "式（2）中nᵢⱼ表示栅格内有效记录数量，ln(1+nᵢⱼ)用于压缩极高密度差异，M₃×₃表示3×3邻域均值平滑。本次展示数据经省域过滤后保留229,561条有效记录，使用170×210个经纬度栅格，并按70%、84%、94%分位点划分展示等级；这些参数服务于方法复现，不作为固定业务阈值。", 11, line=20)
-    para(doc, "照片查重中，pHash汉明距离用于第一层结构召回。", 11, line=20)
+    para(doc, "照片查重中，pHash汉明距离用于第一层结构召回。", 11, line=20, keep=True)
     paper_equation(doc, "hamming", "3")
     para(doc, "式（3）表示两个感知指纹在各比特位置上的差异数量。当前告警规则要求pHash汉明距离＜10，并与CLIP相似度＞0.80同时满足后才进入人工候选。", 11, line=20)
-    para(doc, "千万级照片的理论两两组合只用于解释为什么必须做候选空间收敛。", 11, line=20)
+    para(doc, "千万级照片的理论两两组合只用于解释为什么必须做候选空间收敛。", 11, line=20, keep=True)
     paper_equation(doc, "combinations", "4")
     para(doc, "式（4）说明照片数量增加后全组合近似按平方增长。理论77.5万亿对只代表1245万张照片在无约束情况下的组合量级，不代表实际执行了同等数量的高成本比较，更不能单独作为性能证明。", 11, line=20)
 
@@ -317,8 +317,6 @@ def build():
         widths=(3.2, 5.8, 5.8),
         note="未核验字段不以理论组合量或推算值替代真实运行记录。",
     )
-    figure(doc, "workflow", "附图1 机器筛选—人工核验—结果回写共用闭环（技术附录）", 14.8)
-
     OUT.parent.mkdir(parents=True, exist_ok=True)
     doc.save(OUT)
     print(f"[report] generated {OUT}")
