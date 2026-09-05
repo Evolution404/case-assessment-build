@@ -60,7 +60,7 @@ script:
 	@"$(PYTHON)" scripts/build_script.py
 
 verify:
-	@"$(PYTHON)" scripts/verify.py
+	@"$(PYTHON)" scripts/verify_review.py
 
 privacy-check:
 	@"$(PYTHON)" scripts/privacy_check.py
