@@ -84,14 +84,14 @@ def fig01() -> None:
 
     c.rounded_rect((366, 884, 668, 85), fill=WHITE, outline=BLUE, width=1.8, radius=16, shadow=True)
     c.icon("scale", 455, 927, 63, color=BLUE)
-    c.text(535, 927, "核心矛盾：提效与增质需求并存", size=30, color=BLUE_DARK, weight="bold", valign="middle")
+    c.text(535, 927, "核心矛盾：增效与提质需求并存", size=30, color=BLUE_DARK, weight="bold", valign="middle")
     c.bottom_rule(1014)
     c.save(OUT / "01-外协管理两大痛点.png")
 
 
 def fig03() -> None:
     c = FigureCanvas()
-    c.title(3, "提效增质总体模型")
+    c.title(3, "增效提质总体模型")
 
     c.rounded_rect((24, 330, 268, 438), fill=WHITE, outline=BLUE_DARK, width=1.8, radius=18, shadow=True)
     c.icon("users", 153, 414, 95, color=BLUE)
@@ -124,7 +124,7 @@ def fig03() -> None:
     c.arrow((627, 690), (765, 690), color="#777B80", width=2.6, head=13)
 
     c.rounded_rect((771, 258, 231, 276), fill=WHITE, outline=BLUE, width=1.7, radius=18, shadow=True)
-    c.tab((797, 239, 178, 45), "3a. 提效", size=26)
+    c.tab((797, 239, 178, 45), "3a. 增效", size=26)
     c.icon("chart", 886, 350, 91, color=BLUE)
     c.dashed_line((793, 396), (980, 396), color="#A6BBD0", width=1.0, dash=4, gap=4)
     _bullet(c, 798, 419, "数字化筛选任务", color=BLUE, size=20)
@@ -132,7 +132,7 @@ def fig03() -> None:
     c.text(821, 453, "减少外协全量\n人工排查", size=20, color=TEXT, spacing=5)
 
     c.rounded_rect((771, 575, 231, 264), fill=WHITE, outline=ORANGE, width=1.7, radius=18, shadow=True)
-    c.tab((797, 554, 178, 45), "3b. 增质", orange=True, size=26)
+    c.tab((797, 554, 178, 45), "3b. 提质", orange=True, size=26)
     c.icon("shield", 886, 649, 89, color=ORANGE)
     c.dashed_line((793, 700), (980, 700), color="#C5B3A4", width=1.0, dash=4, gap=4)
     _bullet(c, 798, 727, "照片全量查重", color=ORANGE, size=20)
@@ -148,10 +148,10 @@ def fig03() -> None:
     c.icon("network", 1248, 413, 99, color=BLUE)
     c.text(1248, 499, "4. 数智协同管理", size=27, color=BLUE_DARK, weight="bold", align="center")
     c.line((1137, 548), (1358, 548), color="#7599C2", width=1.4)
-    c.text(1248, 576, "通过数字化与智能化\n手段协同驱动，\n实现外协管理的\n提效与增质闭环，\n提升整体管理效能。", size=21, color=TEXT, align="center", spacing=7)
+    c.text(1248, 576, "通过数字化与智能化\n手段协同驱动，\n实现外协管理的\n增效与提质闭环，\n提升整体管理效能。", size=21, color=TEXT, align="center", spacing=7)
 
-    _footer_caption(c, "技术是支撑手段，核心是外协管理提效与增质。")
-    c.save(OUT / "03-提效增质总体模型.png")
+    _footer_caption(c, "技术是支撑手段，核心是外协管理增效与提质。")
+    c.save(OUT / "03-增效提质总体模型.png")
 
 
 def _draw_layered_rules(c: FigureCanvas, x: float, y: float) -> None:
@@ -246,7 +246,7 @@ def fig04() -> None:
         c.arrow(a,b,color="#8A8D91",width=3,head=12)
 
     c.bottom_rule(836)
-    c.text(724, 873, "数字化筛选贯穿“数据-规则-任务-执行-反馈”全流程，支撑外协管理提效与风险可控。", size=20, color=TEXT, align="center")
+    c.text(724, 873, "数字化筛选贯穿“数据-规则-任务-执行-反馈”全流程，支撑外协管理增效与风险可控。", size=20, color=TEXT, align="center")
     c.save(OUT / "04-外协任务数字化筛选流程.png")
 
 
@@ -480,7 +480,7 @@ def fig10() -> None:
     _row_sep(c,570)
     _before_after_card(c,588,"照片抽查为主","抽样验证，覆盖有限，\n监督盲区较多。","照片全量查重","全量查重识别异常，\n监督更全面可靠。","image","camera_check")
     _row_sep(c,762)
-    _before_after_card(c,779,"问题发现滞后","依赖事后反馈与人工汇报，\n响应慢、处置被动。","提效增质协同闭环","数智驱动协同联动，\n发现及时、处置高效、持续优化。","clock","management")
+    _before_after_card(c,779,"问题发现滞后","依赖事后反馈与人工汇报，\n响应慢、处置被动。","增效提质协同闭环","数智驱动协同联动，\n发现及时、处置高效、持续优化。","clock","management")
 
     c.dashed_line((43,986),(388,986),color="#6F96C3",width=1.3,dash=5,gap=4)
     c.circle(43,986,4,fill=BLUE)

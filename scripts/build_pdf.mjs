@@ -15,6 +15,13 @@ try{
   await page.goto(`${pathToFileURL(html).href}?print=1`,{waitUntil:'load'});
   await page.emulateMedia({media:'print'});
   await page.waitForFunction(()=>document.documentElement.dataset.ready==='1');
+  await page.evaluate(async()=>{
+    await document.fonts.ready;
+    await Promise.all([...document.querySelectorAll('img')].map(img=>img.decode()));
+    await new Promise(resolve=>requestAnimationFrame(resolve));
+    applyAllOrderZoom();
+  });
+  await page.waitForFunction(()=>[...document.querySelectorAll('[data-order-zoom]')].every(box=>box.style.backgroundSize&&box.style.backgroundPosition));
   await page.pdf({path:output,width:'1280px',height:'720px',printBackground:true,preferCSSPageSize:true,tagged:true,outline:false,margin:{top:'0',right:'0',bottom:'0',left:'0'}});
   console.log(`[pdf] ${await page.locator('.slide').count()} pages -> ${output}`);
 }finally{await browser.close()}

@@ -501,10 +501,36 @@ def railway_analysis(network, railway_lines):
 
 
 def draw_crossing(network, context, railway_lines, crossings, affected, rail_segment_count, elapsed):
-    province, districts, bounds = context
-    fig, ax = base_figure()
-    draw_geography(ax, province, districts, bounds)
-    draw_network(ax, network["display"], "color", 0.82)
+    province, districts, _bounds = context
+
+    # 图5与图6/图7共用同一张竖版省域底图：尺寸、留白、线路配色、
+    # 地市界和图例容器保持一致，仅叠加铁路与交跨候选。
+    linework, _used_poles, _total_poles, _total_lines = load_base_linework()
+    xs = [point[0] for ring in province for point in ring]
+    ys = [point[1] for ring in province for point in ring]
+    min_x, max_x = min(xs), max(xs)
+    min_y, max_y = min(ys), max(ys)
+
+    fig, ax = plt.subplots(figsize=(7.2, 8.8), facecolor=BG)
+    ax.set_facecolor(BG)
+    fig.subplots_adjust(left=0.02, right=0.98, top=0.98, bottom=0.02)
+    for ring in province:
+        ax.fill([p[0] for p in ring], [p[1] for p in ring], color=LAND, zorder=0)
+    ax.add_collection(LineCollection(districts, colors=DISTRICT, linewidths=0.34, alpha=0.46, zorder=1))
+    for category in ["35", "110", "220", "other_dc", "500plus"]:
+        style = STYLE[category]
+        ax.add_collection(
+            LineCollection(
+                linework.get(category, []),
+                colors=style["color"],
+                linewidths=style["width"],
+                alpha=style["alpha"],
+                zorder=style["z"],
+                capstyle="round",
+                joinstyle="round",
+            )
+        )
+
     rail_display = []
     for line in railway_lines:
         points = [(round(a, 3), round(b, 3)) for a, b in simplify(line, 0.0025)]
@@ -512,8 +538,8 @@ def draw_crossing(network, context, railway_lines, crossings, affected, rail_seg
             rail_display.append([mercator(*p) for p in points])
     ax.add_collection(LineCollection(rail_display, colors="#F7F8F9", linewidths=0.92, alpha=0.98, zorder=7, capstyle="round"))
     ax.add_collection(LineCollection(rail_display, colors=GRAPHITE, linewidths=0.42, alpha=0.78, zorder=8, capstyle="round"))
-    # Preserve full counts in the metrics, but show at most one representative
-    # crossing per small map cell.  This is a visual de-cluttering operation only.
+
+    # 指标仍使用全部交跨结果；地图只做视觉去拥挤，不改变统计结果。
     representatives = {}
     for lon, lat, category in crossings:
         key = (round(lon / 0.028), round(lat / 0.028))
@@ -528,8 +554,47 @@ def draw_crossing(network, context, railway_lines, crossings, affected, rail_seg
     if len(crossing_xy):
         ax.scatter(crossing_xy[:, 0], crossing_xy[:, 1], s=8.0, c=AMBER, edgecolors=WHITE, linewidths=0.35, alpha=0.96, zorder=9)
         ax.scatter(crossing_xy[:, 0], crossing_xy[:, 1], s=17.5, facecolors="none", edgecolors=CORAL, linewidths=0.45, alpha=0.72, zorder=10)
-    legend_lines(ax, True)
-    return save_figure(fig, "铁路交叉跨越识别")
+
+    ax.add_collection(LineCollection(province, colors=OUTER, linewidths=0.66, alpha=0.92, zorder=11))
+    pad_x = (max_x - min_x) * 0.08
+    pad_y = (max_y - min_y) * 0.05
+    ax.set_xlim(min_x - pad_x, max_x + pad_x)
+    ax.set_ylim(min_y - pad_y, max_y + pad_y)
+    ax.set_aspect("equal", adjustable="box")
+    ax.axis("off")
+
+    handles = [
+        Line2D([0], [0], color=STYLE[key]["color"], lw=max(STYLE[key]["width"] * 2.15, 1.0), alpha=STYLE[key]["alpha"], label=STYLE[key]["label"])
+        for key in ["500plus", "220", "110", "35", "other_dc"]
+    ]
+    handles.append(Line2D([0], [0], color=DISTRICT, lw=0.9, alpha=0.72, label="地市界"))
+    handles.extend(
+        [
+            Line2D([0], [0], color="none", lw=0, label="交叉跨越"),
+            Line2D([0], [0], color=GRAPHITE, lw=1.35, label="铁路"),
+            Line2D([0], [0], marker="o", color="none", markerfacecolor=AMBER, markeredgecolor=CORAL, markeredgewidth=0.5, markersize=5, label="交跨候选"),
+        ]
+    )
+    legend = ax.legend(
+        handles=handles,
+        loc="upper right",
+        bbox_to_anchor=(0.99, 0.995),
+        frameon=True,
+        facecolor="#FFFFFF",
+        edgecolor="#D7DCE2",
+        framealpha=0.96,
+        fancybox=True,
+        fontsize=8.1,
+        handlelength=2.5,
+        borderpad=0.7,
+        labelspacing=0.55,
+    )
+    for text in legend.get_texts():
+        text.set_color(TEXT)
+        if text.get_text() == "交叉跨越":
+            text.set_weight("semibold")
+
+    return save_figure(fig, "铁路交叉跨越识别", tight=True)
 
 
 def distance_to_polyline(lon, lat, points):

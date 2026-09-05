@@ -46,7 +46,7 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -f \
             'dist/figures/01-外协管理两大痛点.png' \
-            'dist/figures/03-提效增质总体模型.png' \
+            'dist/figures/03-增效提质总体模型.png' \
             'dist/figures/04-外协任务数字化筛选流程.png' \
             'dist/figures/08-照片质量督查流程与示例.png' \
             'dist/figures/09-告警工单照片全量查重成果.png' \

@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>外协管理增效提质总体模型</title>
+<style>
+  :root{
+    --ink:#152232;
+    --text:#334155;
+    --muted:#64748b;
+    --rule:#d9e1ea;
+    --soft:#f7f9fc;
+    --blue:#2f6fb2;
+    --blue-dark:#1f4f82;
+    --blue-soft:#f2f7fc;
+    --orange:#d9822b;
+    --orange-dark:#9b5518;
+    --orange-soft:#fff7ef;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;width:100%;height:100%;background:#fff}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans CJK SC",Arial,sans-serif;
+    color:var(--ink);
+    -webkit-font-smoothing:antialiased;
+    text-rendering:geometricPrecision;
+  }
+  .figure{
+    position:relative;
+    width:1664px;
+    height:936px;
+    overflow:hidden;
+    background:#fff;
+  }
+  .title{
+    position:absolute;left:80px;right:80px;top:48px;
+    font-size:42px;line-height:1.18;font-weight:650;letter-spacing:.2px;
+    text-align:center;color:#132236;
+  }
+  .deck{
+    position:absolute;left:80px;right:80px;top:112px;
+    font-size:18px;line-height:1.4;font-weight:400;letter-spacing:.2px;
+    text-align:center;color:#708090;
+  }
+  .section-label{
+    position:absolute;top:163px;
+    font-size:16px;line-height:1;font-weight:600;letter-spacing:1.6px;color:#8995a3;
+  }
+  .label-a{left:80px}.label-b{left:430px}.label-c{left:830px}.label-d{left:1310px}
+
+  .node{
+    position:absolute;
+    border:1px solid var(--rule);
+    border-radius:18px;
+    background:#fff;
+  }
+  .entry{left:80px;top:274px;width:260px;height:350px;padding:38px 30px 30px}
+  .pain.top{left:430px;top:208px;width:300px;height:202px;padding:28px 28px 24px;border-color:#c9d9e9;background:var(--blue-soft)}
+  .pain.bottom{left:430px;top:526px;width:300px;height:202px;padding:28px 28px 24px;border-color:#ecd7c1;background:var(--orange-soft)}
+  .route.top{left:830px;top:184px;width:360px;height:226px;padding:28px 30px 26px;border-color:#bcd1e6}
+  .route.bottom{left:830px;top:526px;width:360px;height:226px;padding:28px 30px 26px;border-color:#e7c8a8}
+  .outcome{left:1310px;top:258px;width:274px;height:382px;padding:35px 27px 28px;border-color:#becbd8;background:#fbfcfe}
+
+  .icon{
+    width:46px;height:46px;display:flex;align-items:center;justify-content:center;
+    margin-bottom:26px;color:var(--blue);
+  }
+  .icon svg{width:46px;height:46px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+  .entry .icon{width:52px;height:52px;margin-bottom:27px;color:#315f8f}
+  .entry .icon svg{width:52px;height:52px}
+  .pain.bottom .icon,.route.bottom .icon{color:var(--orange)}
+  .outcome .icon{color:#315f8f}
+
+  .eyebrow{font-size:16px;font-weight:600;letter-spacing:.8px;color:var(--muted);margin-bottom:12px}
+  .node h2{margin:0;color:var(--ink);font-size:30px;line-height:1.22;font-weight:650;letter-spacing:.1px}
+  .entry h2{font-size:32px}
+  .entry p{margin:22px 0 0;color:var(--text);font-size:20px;line-height:1.72;font-weight:400}
+  .pain h2{font-size:29px}
+  .pain p{margin:18px 0 0;color:var(--text);font-size:20px;line-height:1.62}
+
+  .route-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+  .route-badge{
+    flex:0 0 auto;min-width:76px;height:34px;border-radius:17px;padding:0 16px;
+    display:flex;align-items:center;justify-content:center;
+    font-size:18px;font-weight:650;letter-spacing:.6px;
+  }
+  .route.top .route-badge{color:var(--blue-dark);background:#e9f2fb}
+  .route.bottom .route-badge{color:var(--orange-dark);background:#fff0df}
+  .route h2{font-size:27px;line-height:1.25}
+  .route .action{margin-top:22px;font-size:26px;line-height:1.35;font-weight:650;color:var(--blue-dark)}
+  .route.bottom .action{color:var(--orange-dark)}
+  .route .result{margin-top:11px;font-size:20px;line-height:1.55;color:var(--text)}
+
+  .outcome h2{font-size:31px;line-height:1.3}
+  .outcome .lead{margin-top:19px;font-size:18px;line-height:1.58;color:var(--text)}
+  .division{margin-top:25px;border-top:1px solid #dce4ec;padding-top:20px}
+  .role{display:grid;grid-template-columns:54px 1fr;column-gap:12px;align-items:start;margin-top:13px}
+  .role:first-child{margin-top:0}
+  .role b{font-size:17px;line-height:1.5;color:#27384b;font-weight:650}
+  .role span{font-size:17px;line-height:1.5;color:#536579}
+  .pill{font-size:15px;font-weight:650;line-height:1.7;color:#46627d}
+
+  .lane-caption{
+    position:absolute;font-size:15px;font-weight:600;letter-spacing:.4px;
+    padding:5px 10px;border-radius:12px;background:#fff;
+  }
+  .lane-caption.top{left:747px;top:250px;color:var(--blue-dark)}
+  .lane-caption.bottom{left:747px;top:592px;color:var(--orange-dark)}
+
+  .summary{
+    position:absolute;left:310px;right:310px;top:826px;
+    display:flex;align-items:center;justify-content:center;gap:20px;
+    font-size:22px;line-height:1.4;color:#455568;
+  }
+  .summary strong{font-size:24px;color:#21364d;font-weight:650}
+  .summary .arrow{font-size:27px;color:#98a6b4;transform:translateY(-1px)}
+
+  .connectors{position:absolute;inset:0;width:1664px;height:936px;pointer-events:none}
+  .connectors .neutral{stroke:#a8b4c0;stroke-width:2;fill:none}
+  .connectors .blue{stroke:var(--blue);stroke-width:2.6;fill:none}
+  .connectors .orange{stroke:var(--orange);stroke-width:2.6;fill:none}
+  .connectors .dot-blue{fill:var(--blue)}
+  .connectors .dot-orange{fill:var(--orange)}
+</style>
+</head>
+<body>
+<div class="figure" id="figure03">
+  <div class="title">外协管理增效提质总体模型</div>
+  <div class="deck">围绕“工作量大、质量难保证”两类管理痛点，形成增效与提质两条并行管理路径</div>
+
+  <div class="section-label label-a">管理对象</div>
+  <div class="section-label label-b">管理痛点</div>
+  <div class="section-label label-c">管理路径</div>
+  <div class="section-label label-d">管理结果</div>
+
+  <svg class="connectors" viewBox="0 0 1664 936" aria-hidden="true">
+    <defs>
+      <marker id="arrow-neutral" viewBox="0 0 10 10" refX="8.2" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#a8b4c0"/></marker>
+      <marker id="arrow-blue" viewBox="0 0 10 10" refX="8.2" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#2f6fb2"/></marker>
+      <marker id="arrow-orange" viewBox="0 0 10 10" refX="8.2" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#d9822b"/></marker>
+    </defs>
+    <path class="neutral" d="M340 449 H385" />
+    <path class="neutral" d="M385 309 V627" />
+    <path class="neutral" d="M385 309 H420" marker-end="url(#arrow-neutral)" />
+    <path class="neutral" d="M385 627 H420" marker-end="url(#arrow-neutral)" />
+
+    <path class="blue" d="M730 309 H820" marker-end="url(#arrow-blue)" />
+    <circle class="dot-blue" cx="777" cy="309" r="4.2" />
+    <path class="orange" d="M730 627 H820" marker-end="url(#arrow-orange)" />
+    <circle class="dot-orange" cx="777" cy="627" r="4.2" />
+
+    <path class="blue" d="M1190 297 H1250 V433" />
+    <path class="orange" d="M1190 639 H1250 V465" />
+    <path class="neutral" d="M1250 449 H1300" marker-end="url(#arrow-neutral)" />
+    <circle cx="1250" cy="449" r="5.2" fill="#7e8d9d" />
+  </svg>
+
+  <section class="node entry">
+    <div class="icon" aria-hidden="true">
+      <svg viewBox="0 0 48 48"><circle cx="18" cy="15" r="6"/><circle cx="32" cy="17" r="5"/><path d="M7 36c1.7-7.1 6-10.6 11-10.6S27.4 28.9 29 36"/><path d="M27 27.8c1.7-2.2 3.8-3.3 6.2-3.3 4.1 0 7.3 3.3 8.8 9.5"/></svg>
+    </div>
+    <div class="eyebrow">输电运检</div>
+    <h2>外协队伍管理</h2>
+    <p>外协承担大量现场任务，管理效能直接影响业务质量与交付效率。</p>
+  </section>
+
+  <section class="node pain top">
+    <div class="icon" aria-hidden="true">
+      <svg viewBox="0 0 48 48"><rect x="10" y="8" width="28" height="32" rx="4"/><path d="M17 17h14M17 24h14M17 31h9"/><path d="M7 15h6M7 22h6M7 29h6"/></svg>
+    </div>
+    <h2>工作量大</h2>
+    <p>全量人工排查，<br>重复劳动多。</p>
+  </section>
+
+  <section class="node pain bottom">
+    <div class="icon" aria-hidden="true">
+      <svg viewBox="0 0 48 48"><path d="M24 7l14 5v10c0 9-5.5 15.3-14 19-8.5-3.7-14-10-14-19V12z"/><path d="M24 15v10"/><circle cx="24" cy="31" r="1.4"/></svg>
+    </div>
+    <h2>质量难保证</h2>
+    <p>人工抽查覆盖有限，<br>履职质量难以全量监督。</p>
+  </section>
+
+  <section class="node route top">
+    <div class="route-head"><h2>工作量大 → 增效</h2><div class="route-badge">增效</div></div>
+    <div class="action">数字化筛选任务</div>
+    <div class="result">减少外协全量人工排查</div>
+  </section>
+
+  <section class="node route bottom">
+    <div class="route-head"><h2>质量难保证 → 提质</h2><div class="route-badge">提质</div></div>
+    <div class="action">照片全量查重</div>
+    <div class="result">强化外协履职质量监督</div>
+  </section>
+
+  <section class="node outcome">
+    <div class="icon" aria-hidden="true">
+      <svg viewBox="0 0 48 48"><circle cx="12" cy="24" r="5"/><circle cx="36" cy="12" r="5"/><circle cx="36" cy="36" r="5"/><circle cx="24" cy="24" r="5"/><path d="M17 24h2M28 21l4.5-5M28 27l4.5 5M24 19V11M24 29v8"/></svg>
+    </div>
+    <h2>数智协同管理</h2>
+    <div class="lead">让数字化工具承担规模化重复工作，把管理人员精力回归专业判断与闭环管控。</div>
+    <div class="division">
+      <div class="role"><div class="pill">机器</div><div><b>全量筛选</b><br><span>承担重复劳动</span></div></div>
+      <div class="role"><div class="pill">人员</div><div><b>专业判断</b><br><span>现场核验 · 管理闭环</span></div></div>
+    </div>
+  </section>
+
+  <div class="summary"><span>从<strong>“人海式管理”</strong></span><span class="arrow">→</span><span>转向<strong>“数智协同管理”</strong></span></div>
+</div>
+</body>
+</html>
